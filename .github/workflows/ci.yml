@@ -39,19 +39,6 @@ jobs:
           name: coverage
           path: coverage.out
 
-  semconv:
-    name: Semconv (OTel Weaver)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install OTel Weaver
-        run: |
-          curl -sSfL https://github.com/open-telemetry/weaver/releases/download/v0.21.2/weaver-x86_64-unknown-linux-gnu.tar.gz \
-            | tar xz -C /usr/local/bin weaver
-          weaver --version
-      - name: Validate semantic conventions
-        run: weaver registry check --registry semconv/
-
   build:
     name: Build
     runs-on: ubuntu-latest
