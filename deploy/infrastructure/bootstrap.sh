@@ -73,7 +73,7 @@ kubectl config use-context "kind-${KIND_CLUSTER}"
 
 echo "==> Step 2: Install Cluster API with Hetzner provider"
 export EXP_CLUSTER_RESOURCE_SET="true"
-clusterctl init --infrastructure hetzner
+clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure hetzner
 
 echo "    Waiting for CAPI core controller..."
 kubectl wait --for=condition=Available --timeout=300s \
@@ -100,6 +100,9 @@ echo "==> Step 3: Create the Hetzner secret"
 kubectl create secret generic hetzner \
   --from-literal=hcloud="${HCLOUD_TOKEN}" \
   --dry-run=client -o yaml | kubectl apply -f -
+
+# Label the secret so clusterctl move copies it to the workload cluster
+kubectl patch secret hetzner -p '{"metadata":{"labels":{"clusterctl.cluster.x-k8s.io/move":""}}}'
 
 echo "==> Step 4: Apply cluster manifests"
 # Template replica counts from environment variables

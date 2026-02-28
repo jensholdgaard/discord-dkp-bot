@@ -2,6 +2,8 @@
 #
 # This manifest creates a Kubernetes cluster on Hetzner Cloud using the
 # Cluster API Hetzner provider (CAPH).
+# Based on the official CAPH templates:
+#   https://syself.com/docs/caph/getting-started/quickstart/management-cluster-setup
 #
 # Prerequisites:
 #   - A management cluster with CAPH installed (see bootstrap.sh)
@@ -39,6 +41,9 @@ metadata:
 spec:
   controlPlaneRegions:
     - nbg1
+  controlPlaneEndpoint:
+    host: ""
+    port: 443
   hcloudNetwork:
     enabled: true
     networkZone: eu-central
@@ -50,7 +55,6 @@ spec:
     enabled: true
     region: nbg1
     type: lb11
-    port: 6443
   hetznerSecretRef:
     name: hetzner
     key:
