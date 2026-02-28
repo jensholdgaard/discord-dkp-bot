@@ -49,15 +49,18 @@ KIND_CLUSTER="capi-management"
 echo "==> Pre-flight: Validating HCLOUD_TOKEN..."
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
   -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
-  "https://api.hetzner.cloud/v1/locations?per_page=1") || true
+  "https://api.hetzner.cloud/v1/locations?per_page=1") || {
+  echo "    ⚠  Could not reach Hetzner API (network error). Continuing anyway."
+  HTTP_CODE="000"
+}
 if [[ "${HTTP_CODE}" == "401" || "${HTTP_CODE}" == "403" ]]; then
   echo "ERROR: HCLOUD_TOKEN is invalid (HTTP ${HTTP_CODE}). Check your Hetzner Cloud API token."
   exit 1
 fi
 if [[ "${HTTP_CODE}" == "200" ]]; then
   echo "    ✅ HCLOUD_TOKEN is valid."
-else
-  echo "    ⚠  Could not validate HCLOUD_TOKEN (HTTP ${HTTP_CODE}). Continuing anyway."
+elif [[ "${HTTP_CODE}" != "000" ]]; then
+  echo "    ⚠  Unexpected response from Hetzner API (HTTP ${HTTP_CODE}). Continuing anyway."
 fi
 
 echo "==> Step 1: Create local Kind management cluster"
