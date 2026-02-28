@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="observability"
 
 echo "==> Creating namespace"
-kubectl apply -f "${SCRIPT_DIR}/namespace.yaml"
+kubectl apply -f "${SCRIPT_DIR}/manifests/namespace.yaml"
 
 echo "==> Adding Helm repositories"
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -48,7 +48,7 @@ helm upgrade --install tempo grafana/tempo \
   --wait --timeout 5m
 
 echo "==> Installing OpenTelemetry Collector"
-kubectl apply -f "${SCRIPT_DIR}/otel-collector.yaml"
+kubectl apply -f "${SCRIPT_DIR}/manifests/otel-collector.yaml"
 
 echo ""
 echo "✅ Observability stack installed!"
