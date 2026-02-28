@@ -22,13 +22,13 @@ on:
         required: false
         default: "1"
       machine_type:
-        description: "Hetzner machine type (cpx21, cpx31, etc.)"
+        description: "Hetzner machine type (cpx31, cpx21, etc.)"
         required: false
-        default: "cpx21"
+        default: "cpx31"
       kubernetes_version:
         description: "Kubernetes version"
         required: false
-        default: "v1.31.4"
+        default: "v1.31.6"
       discord_token:
         description: "Discord bot token (leave empty to use repo secret DISCORD_TOKEN)"
         required: false
@@ -154,7 +154,7 @@ jobs:
       - name: "Step 2: Install Cluster API with Hetzner provider"
         run: |
           export EXP_CLUSTER_RESOURCE_SET="true"
-          clusterctl init --infrastructure hetzner
+          clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure hetzner
 
           echo "Waiting for CAPI core controller..."
           kubectl wait --for=condition=Available --timeout=300s \
@@ -183,6 +183,9 @@ jobs:
           kubectl create secret generic hetzner \
             --from-literal=hcloud="${HCLOUD_TOKEN}" \
             --dry-run=client -o yaml | kubectl apply -f -
+
+          # Label the secret so clusterctl move copies it to the workload cluster
+          kubectl patch secret hetzner -p '{"metadata":{"labels":{"clusterctl.cluster.x-k8s.io/move":""}}}'
 
       # ── Step 3a: Pre-flight Hetzner limit check ──────────────
       - name: "Step 3a: Pre-flight Hetzner limit check"
