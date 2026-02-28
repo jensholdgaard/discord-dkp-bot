@@ -79,6 +79,37 @@ infrastructure provisioning and data migration from MongoDB → PostgreSQL.
 └──────────────────────────────────────────────────────────┘
 ```
 
+### 2.1 Container Registry — GitHub Container Registry (GHCR)
+
+**Decision: Use GHCR directly. No Harbor needed.**
+
+The entire CI/CD pipeline already pushes to and pulls from GHCR:
+
+| Component       | Registry Reference                                 |
+|-----------------|---------------------------------------------------|
+| GoReleaser      | `ghcr.io/jensholdgaard/dkpbot:{tag}` + `:latest` |
+| Helm chart      | `image.repository: ghcr.io/jensholdgaard/dkpbot`  |
+| Flux HelmRelease| `oci://ghcr.io/jensholdgaard` (OCI chart source)  |
+| CI release job  | Logs into `ghcr.io` with `GITHUB_TOKEN`           |
+
+**Why not Harbor?**
+
+- Harbor requires deploying, maintaining, and securing an additional
+  service (TLS, storage, upgrades, authentication).
+- GHCR is **free for public repos** and included with GitHub.
+- GHCR supports OCI artifacts (Helm charts + container images).
+- No extra `imagePullSecrets` needed — GHCR public images pull
+  without authentication.
+- The cluster already has internet access for pulling from GHCR.
+
+**When Harbor would make sense (future):**
+
+- If the repository goes private and pull rate limits become an issue.
+- If you need vulnerability scanning at the registry level (though
+  GitHub already provides Dependabot and code scanning).
+- If you deploy to multiple clusters and want a local cache to reduce
+  egress traffic.
+
 ---
 
 ## 3  Infrastructure — Hetzner Cloud via Cluster API
