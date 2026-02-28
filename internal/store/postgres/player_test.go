@@ -94,7 +94,10 @@ func TestPlayerRepo_UpdateDKP(t *testing.T) {
 		t.Fatalf("UpdateDKP(+50): %v", err)
 	}
 
-	got, _ := repo.GetByDiscordID(ctx, "d1")
+	got, err := repo.GetByDiscordID(ctx, "d1")
+	if err != nil {
+		t.Fatalf("GetByDiscordID: %v", err)
+	}
 	if got.DKP != 150 {
 		t.Errorf("DKP after +50 = %d, want 150", got.DKP)
 	}
@@ -104,7 +107,10 @@ func TestPlayerRepo_UpdateDKP(t *testing.T) {
 		t.Fatalf("UpdateDKP(-30): %v", err)
 	}
 
-	got, _ = repo.GetByDiscordID(ctx, "d1")
+	got, err = repo.GetByDiscordID(ctx, "d1")
+	if err != nil {
+		t.Fatalf("GetByDiscordID: %v", err)
+	}
 	if got.DKP != 120 {
 		t.Errorf("DKP after -30 = %d, want 120", got.DKP)
 	}
