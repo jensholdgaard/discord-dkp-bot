@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dkpbot.fullname" . }}-config
+  labels:
+    {{- include "dkpbot.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    discord:
+      token: {{ .Values.config.discord.token | quote }}
+      guild_id: {{ .Values.config.discord.guild_id | quote }}
+    database:
+      host: {{ .Values.config.database.host | quote }}
+      port: {{ .Values.config.database.port }}
+      user: {{ .Values.config.database.user | quote }}
+      password: {{ .Values.config.database.password | quote }}
+      dbname: {{ .Values.config.database.dbname | quote }}
+      sslmode: {{ .Values.config.database.sslmode | quote }}
+      driver: {{ .Values.config.database.driver | quote }}
+    server:
+      port: {{ .Values.config.server.port }}
+      shutdown_timeout: {{ .Values.config.server.shutdown_timeout }}
+    telemetry:
+      service_name: {{ .Values.config.telemetry.service_name | quote }}
+      service_version: {{ .Values.config.telemetry.service_version | quote }}
+      otlp_endpoint: {{ .Values.config.telemetry.otlp_endpoint | quote }}
+      insecure: {{ .Values.config.telemetry.insecure }}

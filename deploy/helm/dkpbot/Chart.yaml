@@ -1,0 +1,8 @@
+apiVersion: v2
+name: dkpbot
+description: Discord DKP Bot - A cloud-native DKP management system
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: jensholdgaard
