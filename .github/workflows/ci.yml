@@ -83,9 +83,9 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create dev tag
+      - name: Create RC tag
         if: "!startsWith(github.ref, 'refs/tags/')"
-        run: git tag -f v0.0.0-dev
+        run: git tag -f v0.1.0-rc
       - name: GoReleaser Dev Build
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: goreleaser/goreleaser-action@v6
@@ -94,3 +94,8 @@ jobs:
           args: release --clean --skip=publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push Docker image
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        run: |
+          docker push ghcr.io/jensholdgaard/dkpbot:v0.1.0-rc
+          docker push ghcr.io/jensholdgaard/dkpbot:latest
