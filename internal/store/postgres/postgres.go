@@ -5,11 +5,12 @@ import (
 	"fmt"
 
 	"github.com/XSAM/otelsql"
+	"github.com/jmoiron/sqlx"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+
 	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/config"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
-	"github.com/jmoiron/sqlx"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
 // closerFunc adapts a func() error into an io.Closer.

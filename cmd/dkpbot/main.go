@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jensholdgaard/discord-dkp-bot/internal/auction"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/bot"
@@ -59,8 +60,8 @@ func run(configPath string) error {
 		tp = telemetry.NewNopProvider()
 	}
 	defer func() {
-		if err := tp.Shutdown(context.Background()); err != nil {
-			slog.Error("telemetry shutdown error", slog.Any("error", err))
+		if shutdownErr := tp.Shutdown(context.Background()); shutdownErr != nil {
+			slog.Error("telemetry shutdown error", slog.Any("error", shutdownErr))
 		}
 	}()
 
@@ -83,7 +84,7 @@ func run(configPath string) error {
 	// Setup health checks.
 	healthHandler := health.NewHandler(clk,
 		health.Checker{
-			Name: "database",
+			Name:  "database",
 			Check: repos.Ping,
 		},
 	)
@@ -94,14 +95,15 @@ func run(configPath string) error {
 	mux.HandleFunc("/readyz", healthHandler.ReadinessHandler())
 
 	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler: mux,
+		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
 		logger.InfoContext(ctx, "starting health server", slog.Int("port", cfg.Server.Port))
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.ErrorContext(ctx, "health server error", slog.Any("error", err))
+		if listenErr := httpServer.ListenAndServe(); listenErr != nil && listenErr != http.ErrServerClosed {
+			logger.ErrorContext(ctx, "health server error", slog.Any("error", listenErr))
 		}
 	}()
 

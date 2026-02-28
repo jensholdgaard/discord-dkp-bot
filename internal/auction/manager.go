@@ -7,11 +7,12 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/event"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // Manager coordinates auction lifecycle and concurrency.

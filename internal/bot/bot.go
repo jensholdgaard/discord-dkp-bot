@@ -6,11 +6,12 @@ import (
 	"log/slog"
 
 	"github.com/bwmarrin/discordgo"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/jensholdgaard/discord-dkp-bot/internal/auction"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/bot/commands"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/config"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/dkp"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // Bot wraps the Discord session and command handlers.

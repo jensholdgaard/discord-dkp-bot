@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/jensholdgaard/discord-dkp-bot/internal/auction"
-	"github.com/jensholdgaard/discord-dkp-bot/internal/dkp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/jensholdgaard/discord-dkp-bot/internal/auction"
+	"github.com/jensholdgaard/discord-dkp-bot/internal/dkp"
 )
 
 // Handlers process Discord interactions.

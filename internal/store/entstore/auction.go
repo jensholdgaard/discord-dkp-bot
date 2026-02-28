@@ -66,7 +66,7 @@ func (r *AuctionRepo) Cancel(ctx context.Context, id string) error {
 		now, id,
 	)
 	if err != nil {
-		return fmt.Errorf("cancelling auction: %w", err)
+		return fmt.Errorf("canceling auction: %w", err)
 	}
 	n, _ := result.RowsAffected()
 	if n == 0 {

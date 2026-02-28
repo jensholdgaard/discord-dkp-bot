@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/jensholdgaard/discord-dkp-bot/internal/auction"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
-	"go.opentelemetry.io/otel/trace/noop"
 )
 
 var (

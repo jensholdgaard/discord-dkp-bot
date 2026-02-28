@@ -9,11 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
-	"github.com/jensholdgaard/discord-dkp-bot/internal/event"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
+
+	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
+	"github.com/jensholdgaard/discord-dkp-bot/internal/event"
 )
 
 // Errors returned by auction operations.
@@ -40,7 +41,7 @@ type Auction struct {
 	ItemName  string
 	StartedBy string
 	MinBid    int
-	Status    string // "open", "closed", "cancelled"
+	Status    string // "open", "closed", "canceled"
 	Bids      []Bid
 	Version   int
 
@@ -172,7 +173,7 @@ func (a *Auction) Cancel(ctx context.Context) error {
 	if a.Status != "open" {
 		return ErrAuctionClosed
 	}
-	a.Status = "cancelled"
+	a.Status = "canceled"
 	a.recordEvent(event.AuctionCancelled, json.RawMessage(`{}`))
 	return nil
 }
@@ -248,7 +249,7 @@ func Replay(events []event.Event) (*Auction, error) {
 			a.Status = "closed"
 
 		case event.AuctionCancelled:
-			a.Status = "cancelled"
+			a.Status = "canceled"
 		}
 		a.Version = e.Version
 	}
