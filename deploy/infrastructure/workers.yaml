@@ -2,6 +2,9 @@
 #
 # Creates a pool of worker nodes to run the DKP bot, CloudNative-PG,
 # and the observability stack.
+# NOTE: The 'replicas' value below is a default. At apply time, bootstrap.yml
+# and bootstrap.sh template this value from WORKER_MACHINE_COUNT
+# (default: 1) to stay within Hetzner server limits.
 ---
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: MachineDeployment
