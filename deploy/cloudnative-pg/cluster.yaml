@@ -8,7 +8,16 @@
 #
 # Prerequisites:
 #   - CloudNative-PG operator installed (see operator.yaml)
-#   - S3 credentials secret for backups (see below)
+#   - The "backup-s3-credentials" Secret must exist in the dkpbot namespace
+#     BEFORE this manifest is applied. It is created automatically by:
+#       • The "Bootstrap Infrastructure" GitHub Actions workflow, or
+#       • The deploy/infrastructure/bootstrap.sh script
+#     using the CNPG_S3_ACCESS_KEY and CNPG_S3_SECRET_KEY secrets.
+#
+#     To create it manually:
+#       kubectl -n dkpbot create secret generic backup-s3-credentials \
+#         --from-literal=ACCESS_KEY_ID=<your-hetzner-s3-access-key> \
+#         --from-literal=ACCESS_SECRET_KEY=<your-hetzner-s3-secret-key>
 #
 # Apply with:
 #   kubectl apply -f cluster.yaml
@@ -19,27 +28,6 @@ metadata:
   name: dkpbot
   labels:
     app.kubernetes.io/part-of: dkpbot
----
-# S3 credentials for backup to Hetzner Object Storage.
-#
-# IMPORTANT: This Secret must be created BEFORE applying cluster.yaml.
-# Do NOT commit real credentials to Git. Create it manually or via a
-# secret manager (Sealed Secrets, SOPS, External Secrets Operator):
-#
-#   kubectl -n dkpbot create secret generic backup-s3-credentials \
-#     --from-literal=ACCESS_KEY_ID=<your-key> \
-#     --from-literal=ACCESS_SECRET_KEY=<your-secret>
-#
-# This placeholder is provided for reference only.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: backup-s3-credentials
-  namespace: dkpbot
-type: Opaque
-stringData:
-  ACCESS_KEY_ID: "<replace-with-hetzner-s3-access-key>"
-  ACCESS_SECRET_KEY: "<replace-with-hetzner-s3-secret-key>"
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
