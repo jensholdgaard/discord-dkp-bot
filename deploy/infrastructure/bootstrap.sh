@@ -108,8 +108,9 @@ echo "==> Step 3b: Ensure SSH key exists in Hetzner Cloud"
 SSH_KEY_NAME="${HCLOUD_SSH_KEY:-dkpbot-ssh}"
 echo "    Checking if SSH key '${SSH_KEY_NAME}' exists..."
 
+ENCODED_NAME=$(jq -rn --arg n "${SSH_KEY_NAME}" '$n|@uri')
 RESP=$(curl -sf -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
-  "https://api.hetzner.cloud/v1/ssh_keys?name=${SSH_KEY_NAME}" 2>&1) || {
+  "https://api.hetzner.cloud/v1/ssh_keys?name=${ENCODED_NAME}" 2>&1) || {
   echo "ERROR: Could not query Hetzner Cloud SSH keys API."
   exit 1
 }
@@ -133,9 +134,11 @@ else
     echo "    Using existing public key from ~/.ssh/id_rsa.pub"
   else
     echo "    No existing SSH key found — generating a new Ed25519 key pair."
-    ssh-keygen -t ed25519 -f /tmp/hcloud-ssh-key -N "" -C "dkpbot-bootstrap" >/dev/null 2>&1
-    SSH_PUBKEY=$(cat /tmp/hcloud-ssh-key.pub)
-    echo "    ⚠  Generated key pair saved to /tmp/hcloud-ssh-key (private) and /tmp/hcloud-ssh-key.pub (public)."
+    TMPDIR=$(mktemp -d)
+    ssh-keygen -t ed25519 -f "${TMPDIR}/hcloud-ssh-key" -N "" -C "dkpbot-bootstrap" >/dev/null 2>&1
+    chmod 600 "${TMPDIR}/hcloud-ssh-key"
+    SSH_PUBKEY=$(cat "${TMPDIR}/hcloud-ssh-key.pub")
+    echo "    ⚠  Generated key pair saved to ${TMPDIR}/hcloud-ssh-key (private) and ${TMPDIR}/hcloud-ssh-key.pub (public)."
     echo "    Save the private key if you need SSH access to your nodes."
   fi
 
