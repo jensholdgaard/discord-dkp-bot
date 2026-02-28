@@ -81,7 +81,10 @@ func TestAuctionRepo_Close(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	got, _ := auctionRepo.GetByID(ctx, a.ID)
+	got, err := auctionRepo.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after Close: %v", err)
+	}
 	if got.Status != "closed" {
 		t.Errorf("Status = %q, want %q", got.Status, "closed")
 	}
@@ -115,13 +118,19 @@ func TestAuctionRepo_Cancel(t *testing.T) {
 		t.Fatalf("Cancel: %v", err)
 	}
 
-	got, _ := repo.GetByID(ctx, a.ID)
+	got, err := repo.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after Cancel: %v", err)
+	}
 	if got.Status != "cancelled" {
 		t.Errorf("Status = %q, want %q", got.Status, "cancelled")
 	}
 
 	// Should not appear in open list.
-	open, _ := repo.ListOpen(ctx)
+	open, err := repo.ListOpen(ctx)
+	if err != nil {
+		t.Fatalf("ListOpen: %v", err)
+	}
 	if len(open) != 0 {
 		t.Errorf("ListOpen returned %d after cancel, want 0", len(open))
 	}
