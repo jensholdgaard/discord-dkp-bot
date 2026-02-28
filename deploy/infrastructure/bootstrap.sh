@@ -59,7 +59,12 @@ clusterctl init --infrastructure hetzner
 
 echo "    Waiting for CAPH controllers to be ready..."
 kubectl wait --for=condition=Available --timeout=300s \
-  deployment/caph-controller-manager -n caph-system 2>/dev/null || true
+  deployment/caph-controller-manager -n caph-system
+
+echo "    Waiting for Hetzner CRDs to be established..."
+kubectl wait --for=condition=Established --timeout=60s \
+  crd/hetznerclusters.infrastructure.cluster.x-k8s.io \
+  crd/hcloudmachinetemplates.infrastructure.cluster.x-k8s.io
 
 echo "==> Step 3: Create the Hetzner secret"
 kubectl create secret generic hetzner \

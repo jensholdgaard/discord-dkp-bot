@@ -138,7 +138,12 @@ jobs:
 
           echo "Waiting for CAPH controllers..."
           kubectl wait --for=condition=Available --timeout=300s \
-            deployment/caph-controller-manager -n caph-system || true
+            deployment/caph-controller-manager -n caph-system
+
+          echo "Waiting for Hetzner CRDs to be established..."
+          kubectl wait --for=condition=Established --timeout=60s \
+            crd/hetznerclusters.infrastructure.cluster.x-k8s.io \
+            crd/hcloudmachinetemplates.infrastructure.cluster.x-k8s.io
 
       # ── Step 3: Create Hetzner secret ────────────────────────
       - name: "Step 3: Create Hetzner secret"

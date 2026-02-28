@@ -28,22 +28,27 @@ spec:
     name: dkpbot-prod-control-plane
   infrastructureRef:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-    kind: HCloudCluster
+    kind: HetznerCluster
     name: dkpbot-prod
 ---
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-kind: HCloudCluster
+kind: HetznerCluster
 metadata:
   name: dkpbot-prod
   namespace: default
 spec:
   controlPlaneRegions:
     - nbg1
-  network:
+  hcloudNetwork:
     enabled: true
     networkZone: eu-central
     cidrBlock: "10.0.0.0/16"
   sshKeys:
-    - name: dkpbot-ssh
+    hcloud:
+      - name: dkpbot-ssh
   controlPlaneLoadBalancer:
     region: nbg1
+  hetznerSecretRef:
+    name: hetzner
+    key:
+      hcloudToken: hcloud
