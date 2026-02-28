@@ -37,6 +37,7 @@ else
 fi
 
 CLUSTER_NAME="${CLUSTER_NAME:-dkpbot-prod}"
+FLUX_BRANCH="${FLUX_BRANCH:-main}"
 KIND_CLUSTER="capi-management"
 
 # ─── Required env check ─────────────────────────────────────────
@@ -112,13 +113,13 @@ unset KUBECONFIG
 clusterctl move \
   --to-kubeconfig="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
 
-echo "==> Step 10: Bootstrap FluxCD on the workload cluster"
+echo "==> Step 10: Bootstrap FluxCD on the workload cluster (branch: ${FLUX_BRANCH})"
 export KUBECONFIG="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
 
 flux bootstrap github \
   --owner="${GITHUB_USER}" \
   --repository=discord-dkp-bot \
-  --branch=main \
+  --branch="${FLUX_BRANCH}" \
   --path=deploy/flux \
   --personal \
   --token-auth
@@ -157,6 +158,7 @@ kind delete cluster --name "${KIND_CLUSTER}"
 
 echo ""
 echo "✅ Cluster '${CLUSTER_NAME}' is ready and self-managed via FluxCD!"
+echo "   FluxCD is tracking branch: ${FLUX_BRANCH}"
 echo ""
 echo "Use the workload cluster:"
 echo "  export KUBECONFIG=${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
@@ -165,6 +167,12 @@ echo ""
 echo "FluxCD will now reconcile all services from Git:"
 echo "  flux get kustomizations"
 echo "  flux get helmreleases -A"
+if [[ "${FLUX_BRANCH}" != "main" ]]; then
+  echo ""
+  echo "⚠  Flux is tracking branch '${FLUX_BRANCH}', not 'main'."
+  echo "   After testing, re-run with FLUX_BRANCH=main or update the"
+  echo "   Flux GitRepository to point to 'main'."
+fi
 echo ""
 echo "⚠  Update the dkpbot-secrets Secret with real Discord credentials:"
 echo "  kubectl -n flux-system edit secret dkpbot-secrets"

@@ -4,6 +4,9 @@
 # The `flux bootstrap` command creates the flux-system namespace and
 # its own GitRepository automatically; this file documents the expected
 # state for reference and can be applied manually if needed.
+#
+# The branch is set by the bootstrap workflow's "flux_branch" input
+# (defaults to the branch you dispatch from). For production use "main".
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
@@ -14,4 +17,4 @@ spec:
   interval: 5m
   url: https://github.com/jensholdgaard/discord-dkp-bot.git
   ref:
-    branch: main
+    branch: main  # overridden at bootstrap time via --branch flag
