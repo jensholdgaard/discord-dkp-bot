@@ -1,0 +1,261 @@
+name: Bootstrap Infrastructure
+
+# Manual trigger only — not part of CI.
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: "Kubernetes cluster name"
+        required: false
+        default: "dkpbot-prod"
+      hcloud_region:
+        description: "Hetzner Cloud region (fsn1, nbg1, hel1)"
+        required: false
+        default: "fsn1"
+      control_plane_count:
+        description: "Number of control-plane nodes"
+        required: false
+        default: "3"
+      worker_count:
+        description: "Number of worker nodes"
+        required: false
+        default: "2"
+      machine_type:
+        description: "Hetzner machine type (cpx21, cpx31, etc.)"
+        required: false
+        default: "cpx21"
+      kubernetes_version:
+        description: "Kubernetes version"
+        required: false
+        default: "v1.31.4"
+      discord_token:
+        description: "Discord bot token (leave empty to use repo secret DISCORD_TOKEN)"
+        required: false
+        default: ""
+      discord_guild_id:
+        description: "Discord guild ID (leave empty to use repo secret DISCORD_GUILD_ID)"
+        required: false
+        default: ""
+
+# Secrets required (configure in Settings → Secrets and variables → Actions):
+#   HCLOUD_TOKEN       — Hetzner Cloud API token
+#   HCLOUD_SSH_KEY     — (optional) SSH key name in Hetzner console, defaults to "dkpbot-ssh"
+#   DISCORD_TOKEN      — Discord bot token (alternative to input)
+#   DISCORD_GUILD_ID   — Discord guild ID (alternative to input)
+
+permissions:
+  contents: write    # Flux bootstrap commits to the repo
+
+jobs:
+  bootstrap:
+    name: Bootstrap Hetzner Cluster
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLUSTER_NAME: ${{ inputs.cluster_name }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      HCLOUD_SSH_KEY: ${{ secrets.HCLOUD_SSH_KEY || 'dkpbot-ssh' }}
+      HCLOUD_REGION: ${{ inputs.hcloud_region }}
+      CONTROL_PLANE_MACHINE_COUNT: ${{ inputs.control_plane_count }}
+      WORKER_MACHINE_COUNT: ${{ inputs.worker_count }}
+      HCLOUD_CONTROL_PLANE_MACHINE_TYPE: ${{ inputs.machine_type }}
+      HCLOUD_WORKER_MACHINE_TYPE: ${{ inputs.machine_type }}
+      HCLOUD_NETWORK_ZONE: "eu-central"
+      KUBERNETES_VERSION: ${{ inputs.kubernetes_version }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_USER: ${{ github.repository_owner }}
+
+    steps:
+      - name: Validate secrets
+        run: |
+          if [[ -z "${HCLOUD_TOKEN}" ]]; then
+            echo "::error::HCLOUD_TOKEN secret is not set. Configure it in Settings → Secrets."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      # ── Install tooling ───────────────────────────────────────
+      - name: Install Kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.25.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Install clusterctl
+        run: |
+          curl -Lo ./clusterctl https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.4/clusterctl-linux-amd64
+          chmod +x ./clusterctl
+          sudo mv ./clusterctl /usr/local/bin/clusterctl
+
+      - name: Install Flux CLI
+        run: |
+          curl -s https://fluxcd.io/install.sh | sudo bash
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.4"
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      # ── Step 1: Kind management cluster ───────────────────────
+      - name: "Step 1: Create Kind management cluster"
+        run: |
+          kind create cluster --name capi-management
+          kubectl config use-context kind-capi-management
+
+      # ── Step 2: Install CAPI + Hetzner provider ──────────────
+      - name: "Step 2: Install Cluster API with Hetzner provider"
+        run: |
+          export EXP_CLUSTER_RESOURCE_SET="true"
+          clusterctl init --infrastructure hetzner
+
+          echo "Waiting for CAPH controllers..."
+          kubectl wait --for=condition=Available --timeout=300s \
+            deployment/caph-controller-manager -n caph-system || true
+
+      # ── Step 3: Create Hetzner secret ────────────────────────
+      - name: "Step 3: Create Hetzner secret"
+        run: |
+          kubectl create secret generic hetzner \
+            --from-literal=hcloud="${HCLOUD_TOKEN}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      # ── Step 4: Apply cluster manifests ──────────────────────
+      - name: "Step 4: Apply cluster manifests"
+        run: |
+          kubectl apply -f deploy/infrastructure/cluster.yaml
+          kubectl apply -f deploy/infrastructure/control-plane.yaml
+          kubectl apply -f deploy/infrastructure/workers.yaml
+
+      # ── Step 5: Wait for workload cluster ────────────────────
+      - name: "Step 5: Wait for workload cluster"
+        run: |
+          echo "Waiting for workload cluster (up to 15 minutes)..."
+          kubectl wait --for=condition=Ready --timeout=900s \
+            "cluster/${CLUSTER_NAME}"
+
+      # ── Step 6: Get workload kubeconfig ──────────────────────
+      - name: "Step 6: Get workload cluster kubeconfig"
+        run: |
+          clusterctl get kubeconfig "${CLUSTER_NAME}" > /tmp/workload.kubeconfig
+          echo "KUBECONFIG=/tmp/workload.kubeconfig" >> "$GITHUB_ENV"
+
+      # ── Step 7: Install Hetzner CCM ─────────────────────────
+      - name: "Step 7: Install Hetzner Cloud Controller Manager"
+        run: |
+          kubectl create secret generic hetzner \
+            --from-literal=token="${HCLOUD_TOKEN}" \
+            --from-literal=network="${CLUSTER_NAME}" \
+            -n kube-system --dry-run=client -o yaml | kubectl apply -f -
+
+          helm repo add hcloud https://charts.hetzner.cloud
+          helm repo update
+          helm install hccm hcloud/hcloud-cloud-controller-manager \
+            -n kube-system \
+            --set env.HCLOUD_TOKEN.valueFrom.secretKeyRef.name=hetzner \
+            --set env.HCLOUD_TOKEN.valueFrom.secretKeyRef.key=token
+
+      # ── Step 8: Install Cilium CNI ──────────────────────────
+      - name: "Step 8: Install Cilium CNI"
+        run: |
+          helm repo add cilium https://helm.cilium.io/
+          helm install cilium cilium/cilium \
+            -n kube-system \
+            --set ipam.mode=kubernetes
+
+          echo "Waiting for nodes to become Ready..."
+          kubectl wait --for=condition=Ready nodes --all --timeout=300s
+
+      # ── Step 9: Pivot CAPI ─────────────────────────────────
+      - name: "Step 9: Pivot CAPI management to workload cluster"
+        run: |
+          # Switch back to management cluster for the move
+          export KUBECONFIG=""
+          kubectl config use-context kind-capi-management
+
+          clusterctl move \
+            --to-kubeconfig=/tmp/workload.kubeconfig
+
+          # Switch to workload cluster for remaining steps
+          echo "KUBECONFIG=/tmp/workload.kubeconfig" >> "$GITHUB_ENV"
+
+      # ── Step 10: Bootstrap FluxCD ──────────────────────────
+      - name: "Step 10: Bootstrap FluxCD"
+        run: |
+          flux bootstrap github \
+            --owner="${GITHUB_USER}" \
+            --repository="${{ github.event.repository.name }}" \
+            --branch=main \
+            --path=deploy/flux \
+            --personal \
+            --token-auth
+
+      # ── Step 11: Apply Flux resources ──────────────────────
+      - name: "Step 11: Apply Flux Kustomizations and ConfigMaps"
+        run: |
+          kubectl apply -f deploy/flux/kustomizations/helm-values-configmaps.yaml
+          kubectl apply -f deploy/flux/kustomizations/
+
+      # ── Step 12: Create DKP bot secrets ────────────────────
+      - name: "Step 12: Create DKP bot secrets"
+        run: |
+          DISCORD_TOK="${{ inputs.discord_token }}"
+          DISCORD_GID="${{ inputs.discord_guild_id }}"
+
+          # Fall back to repo secrets if inputs are empty
+          if [[ -z "${DISCORD_TOK}" ]]; then
+            DISCORD_TOK="${{ secrets.DISCORD_TOKEN }}"
+          fi
+          if [[ -z "${DISCORD_GID}" ]]; then
+            DISCORD_GID="${{ secrets.DISCORD_GUILD_ID }}"
+          fi
+
+          # Use placeholder if still empty
+          DISCORD_TOK="${DISCORD_TOK:-REPLACE_ME}"
+          DISCORD_GID="${DISCORD_GID:-REPLACE_ME}"
+
+          kubectl -n flux-system create secret generic dkpbot-secrets \
+            --from-literal=config.discord.token="${DISCORD_TOK}" \
+            --from-literal=config.discord.guild_id="${DISCORD_GID}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      # ── Step 13: Clean up Kind ─────────────────────────────
+      - name: "Step 13: Delete Kind management cluster"
+        if: always()
+        run: |
+          kind delete cluster --name capi-management || true
+
+      # ── Step 14: Upload kubeconfig as artifact ─────────────
+      - name: "Step 14: Upload kubeconfig"
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubeconfig-${{ inputs.cluster_name }}
+          path: /tmp/workload.kubeconfig
+          retention-days: 1
+
+      # ── Summary ────────────────────────────────────────────
+      - name: Summary
+        if: success()
+        run: |
+          echo "## ✅ Cluster \`${CLUSTER_NAME}\` bootstrapped!" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Region:** ${HCLOUD_REGION}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Kubernetes:** ${KUBERNETES_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Control Plane:** ${CONTROL_PLANE_MACHINE_COUNT}× ${HCLOUD_CONTROL_PLANE_MACHINE_TYPE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Workers:** ${WORKER_MACHINE_COUNT}× ${HCLOUD_WORKER_MACHINE_TYPE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### FluxCD is now managing:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- CloudNative-PG operator + PostgreSQL 16.6 cluster" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Observability stack (Prometheus, Grafana, Loki, Tempo)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- DKP bot (HelmRelease)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Next steps" >> "$GITHUB_STEP_SUMMARY"
+          echo "1. Download the kubeconfig artifact from this run" >> "$GITHUB_STEP_SUMMARY"
+          echo "2. Update \`dkpbot-secrets\` with real Discord credentials if not provided" >> "$GITHUB_STEP_SUMMARY"
+          echo "3. Update \`backup-s3-credentials\` in the \`dkpbot\` namespace with Hetzner S3 keys" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "⚠️ The kubeconfig artifact expires in 1 day — save it securely." >> "$GITHUB_STEP_SUMMARY"

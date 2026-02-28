@@ -106,6 +106,11 @@ After step 4, FluxCD watches this Git repository and reconciles all
 services (CNPG, observability, the bot itself) automatically. Pushing
 a change to `main` triggers a cluster-wide reconciliation.
 
+> **No local tooling required.** The entire bootstrap can be run from
+> the **Bootstrap Infrastructure** GitHub Actions workflow
+> (`.github/workflows/bootstrap.yml`), triggered manually from the
+> Actions tab. The kubeconfig is uploaded as a workflow artifact.
+
 ### 3.3 Cluster Sizing (MVP)
 
 | Role          | Hetzner Type | Count | Purpose               |
@@ -349,7 +354,13 @@ telemetry:
 1. Review and approve this plan.
 2. Create Hetzner Cloud project and generate API token.
 3. Create GitHub PAT with `repo` scope for FluxCD.
-4. Run `deploy/infrastructure/bootstrap.sh` to provision the cluster and install Flux.
-5. Flux auto-deploys database, observability, and bot from Git.
-6. Populate secrets (Discord token, S3 credentials) on the cluster.
-7. Begin data migration from MongoDB.
+4. Add secrets to the GitHub repository:
+   - `HCLOUD_TOKEN` — Hetzner Cloud API token
+   - `DISCORD_TOKEN` — Discord bot token
+   - `DISCORD_GUILD_ID` — Discord guild ID
+5. Run the **Bootstrap Infrastructure** workflow from the Actions tab
+   (or run `deploy/infrastructure/bootstrap.sh` locally).
+6. Flux auto-deploys database, observability, and bot from Git.
+7. Download the kubeconfig artifact from the workflow run.
+8. Update `backup-s3-credentials` in the `dkpbot` namespace with Hetzner S3 keys.
+9. Begin data migration from MongoDB.
