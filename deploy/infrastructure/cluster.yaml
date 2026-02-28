@@ -43,7 +43,7 @@ spec:
     - nbg1
   controlPlaneEndpoint:
     host: ""
-    port: 443
+    port: 6443
   hcloudNetwork:
     enabled: true
     networkZone: eu-central
