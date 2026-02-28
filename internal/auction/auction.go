@@ -174,7 +174,7 @@ func (a *Auction) Cancel(ctx context.Context) error {
 		return ErrAuctionClosed
 	}
 	a.Status = "canceled"
-	a.recordEvent(event.AuctionCancelled, json.RawMessage(`{}`))
+	a.recordEvent(event.AuctionCanceled, json.RawMessage(`{}`))
 	return nil
 }
 
@@ -248,7 +248,7 @@ func Replay(events []event.Event) (*Auction, error) {
 		case event.AuctionClosed:
 			a.Status = "closed"
 
-		case event.AuctionCancelled:
+		case event.AuctionCanceled:
 			a.Status = "canceled"
 		}
 		a.Version = e.Version

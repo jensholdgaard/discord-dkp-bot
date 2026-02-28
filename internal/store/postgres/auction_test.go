@@ -122,8 +122,8 @@ func TestAuctionRepo_Cancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID after Cancel: %v", err)
 	}
-	if got.Status != "cancelled" {
-		t.Errorf("Status = %q, want %q", got.Status, "cancelled")
+	if got.Status != "canceled" {
+		t.Errorf("Status = %q, want %q", got.Status, "canceled")
 	}
 
 	// Should not appear in open list.
@@ -135,8 +135,8 @@ func TestAuctionRepo_Cancel(t *testing.T) {
 		t.Errorf("ListOpen returned %d after cancel, want 0", len(open))
 	}
 
-	// Cancelling again should fail.
+	// Canceling again should fail.
 	if err := repo.Cancel(ctx, a.ID); err == nil {
-		t.Error("expected error cancelling an already-cancelled auction")
+		t.Error("expected error canceling an already-canceled auction")
 	}
 }

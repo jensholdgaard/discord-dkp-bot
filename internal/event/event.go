@@ -12,7 +12,7 @@ const (
 	AuctionStarted   Type = "auction.started"
 	AuctionBidPlaced Type = "auction.bid_placed"
 	AuctionClosed    Type = "auction.closed"
-	AuctionCancelled Type = "auction.cancelled"
+	AuctionCanceled  Type = "auction.canceled"
 
 	DKPAwarded  Type = "dkp.awarded"
 	DKPDeducted Type = "dkp.deducted"

@@ -103,7 +103,8 @@ func TestPlayerRepo_UpdateDKP(t *testing.T) {
 	}
 
 	// Deduct -30
-	if err := repo.UpdateDKP(ctx, p.ID, -30); err != nil {
+	err = repo.UpdateDKP(ctx, p.ID, -30)
+	if err != nil {
 		t.Fatalf("UpdateDKP(-30): %v", err)
 	}
 
