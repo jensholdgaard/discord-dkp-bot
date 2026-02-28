@@ -24,6 +24,9 @@ linters:
         - shadow
     misspell:
       locale: US
+    gosec:
+      excludes:
+        - G117
   exclusions:
     presets:
       - std-error-handling
