@@ -1,55 +1,142 @@
-# DKP Discord Bot
+# Discord DKP Bot
 
-A Discord bot for managing DKP (Raid Points) with additional slash commands for administration.
-
-## Table of Contents
-
-- [Features](#features)
-- [Invite](#invite)
-- [Commands](#commands)
+A cloud-native Discord bot for managing Dragon Kill Points (DKP) in MMO guilds, built with Go following CNCF best practices.
 
 ## Features
 
-- **DKP Management:** Keep track of Raid Points for your guild members.
-- **Slash Commands:** Utilize powerful slash commands for easy and efficient management.
-- **Parse logs:** Input EQ /who logs to automatically add DKPs to all members participating in a raid.
+- **DKP Management** — Award, deduct, and track DKP for guild members
+- **Auction System** — Run item auctions with real-time bidding using DKP
+- **Event Sourcing** — Full event history for auction replay and auditability
+- **Discord Slash Commands** — Modern Discord interaction model
+- **OpenTelemetry** — Traces, metrics, and logs with TraceID correlation via `slog`
+- **Postgres** — Persistent storage with OTEL-instrumented queries (sqlx)
+- **Health Checks** — Kubernetes-ready liveness (`/healthz`) and readiness (`/readyz`) endpoints
+- **Helm Chart** — Production-ready Kubernetes deployment
 
-## Invite
-[Invite me to your discord!](https://discord.com/api/oauth2/authorize?client_id=1176561376282554439&permissions=551903423488&scope=applications.commands+bot)
+## Architecture
 
-## Commands
-
-### 1. Add DKP
-Add DKP points to a player.
-
-### 2. Remove DKP
-Add DKP points to a player.
-
-### 3. DKP History
-View the DKP history for a specific player.
-
-### 4. List Player Assistance
-List players with their participation
-
-### 5. List Players DKP
-List all players and their current DKP.
-
-### 6. Parse DKPs
-Parse DKP data from an EQ log (text) like:
 ```
-[Sun Dec 10 18:48:16 2023] ---------------------------
-[Sun Dec 10 18:48:16 2023] [50 Monk] SuperMonk (Human) <Super Guild>
-[Sun Dec 10 18:48:16 2023] [47 Shaman] SlowsAndStuff (Troll) <Super Guild>
-[Sun Dec 10 18:48:16 2023] [48 Mague] MoarPets (Dark Elf) <Super Guild>
-[Sun Dec 10 18:48:16 2023] There are 3 players in Nagafen's Lair.
+cmd/dkpbot/          — Single binary entry point
+internal/
+  config/            — YAML configuration loader
+  telemetry/         — OpenTelemetry setup (traces, metrics, logs)
+  health/            — Liveness and readiness HTTP handlers
+  clock/             — Testable time abstraction
+  event/             — Event sourcing types and store interface
+  auction/           — Auction aggregate with concurrency model
+  dkp/               — DKP business logic manager
+  store/             — Repository interfaces
+    postgres/        — Postgres implementations + migrations
+  bot/               — Discord bot lifecycle
+    commands/        — Slash command handlers
+deploy/
+  helm/dkpbot/       — Helm chart
+  docker-compose.dev.yml — Local development environment
 ```
 
-### 7. Register Character
-Associates a discord guild member with a character in the logs
+## Quick Start
 
-### 8. Backup
-Generates a downloable file with all your guild data in JSON format.
+### Prerequisites
 
-### 9. Set admin role
-Sets the role that can add / remove DKPs only usable by discord admin
+- Go 1.23+
+- Docker & Docker Compose
+- PostgreSQL 16+
+
+### Setup
+
+```bash
+# Install development tools
+make setup
+
+# Start local Postgres and OTEL collector
+make dev
+
+# Apply database migrations
+make migrate
+
+# Copy and edit config
+cp config.example.yaml config.yaml
+# Edit config.yaml with your Discord bot token
+
+# Run the bot
+make run
+```
+
+### Configuration
+
+The bot takes a single `--config` flag pointing to a YAML file:
+
+```bash
+dkpbot --config /path/to/config.yaml
+```
+
+See [config.example.yaml](config.example.yaml) for all available options.
+
+## Development
+
+```bash
+# Run tests
+make test
+
+# Run tests with coverage
+make test-cover
+
+# Lint
+make lint
+
+# Format code
+make fmt
+
+# Build binary
+make build
+
+# Build Docker image
+make docker
+```
+
+## Discord Commands
+
+| Command | Description |
+|---------|-------------|
+| `/register <character>` | Register your character for DKP tracking |
+| `/dkp` | Check your DKP balance |
+| `/dkp-list` | List all players and their DKP |
+| `/dkp-add <player> <amount> <reason>` | Add DKP to a player (admin) |
+| `/dkp-remove <player> <amount> <reason>` | Remove DKP from a player (admin) |
+| `/auction-start <item> [min-bid] [duration]` | Start an item auction |
+| `/bid <auction-id> <amount>` | Place a bid on an auction |
+| `/auction-close <auction-id>` | Close an auction (admin) |
+
+## Deployment
+
+### Helm
+
+```bash
+helm install dkpbot deploy/helm/dkpbot \
+  --set config.discord.token=YOUR_TOKEN \
+  --set config.discord.guild_id=YOUR_GUILD_ID
+```
+
+### GoReleaser
+
+```bash
+# Snapshot build (no publish)
+make release-snapshot
+
+# Tagged release (CI handles this automatically)
+git tag v0.1.0
+git push --tags
+```
+
+## Testing
+
+Tests follow Go's table-driven test pattern:
+
+```bash
+make test
+```
+
+## License
+
+ISC
 
