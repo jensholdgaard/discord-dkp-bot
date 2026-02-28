@@ -57,6 +57,18 @@ echo "==> Step 2: Install Cluster API with Hetzner provider"
 export EXP_CLUSTER_RESOURCE_SET="true"
 clusterctl init --infrastructure hetzner
 
+echo "    Waiting for CAPI core controller..."
+kubectl wait --for=condition=Available --timeout=300s \
+  deployment/capi-controller-manager -n capi-system
+
+echo "    Waiting for KubeadmControlPlane controller..."
+kubectl wait --for=condition=Available --timeout=300s \
+  deployment/capi-kubeadm-control-plane-controller-manager -n capi-kubeadm-control-plane-system
+
+echo "    Waiting for KubeadmBootstrap controller..."
+kubectl wait --for=condition=Available --timeout=300s \
+  deployment/capi-kubeadm-bootstrap-controller-manager -n capi-kubeadm-bootstrap-system
+
 echo "    Waiting for CAPH controllers to be ready..."
 kubectl wait --for=condition=Available --timeout=300s \
   deployment/caph-controller-manager -n caph-system
