@@ -13,7 +13,7 @@ func TestIdentity_FromPodName(t *testing.T) {
 }
 
 func TestIdentity_Hostname(t *testing.T) {
-	os.Unsetenv("POD_NAME")
+	t.Setenv("POD_NAME", "")
 	host, err := os.Hostname()
 	if err != nil {
 		t.Skip("cannot get hostname")
