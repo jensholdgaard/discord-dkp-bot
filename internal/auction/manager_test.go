@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -111,6 +112,20 @@ func (m *mockPlayerRepo) UpdateDKP(_ context.Context, id string, delta int) erro
 }
 
 // --- tests ---
+
+// tickingClock is a mock clock that advances by 1 second on each call.
+type tickingClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *tickingClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := c.t
+	c.t = c.t.Add(time.Second)
+	return now
+}
 
 func TestManager_StartAuction(t *testing.T) {
 	es := &mockEventStore{}
@@ -426,5 +441,94 @@ func TestReplay_InvalidBidData(t *testing.T) {
 	_, err := auction.Replay(events)
 	if err == nil {
 		t.Fatal("expected error for invalid bid event data")
+	}
+}
+
+func TestManager_RecoverOpenAuctions(t *testing.T) {
+	es := &mockEventStore{}
+	repo := newMockPlayerRepo()
+	tp := noop.NewTracerProvider()
+	clk := &tickingClock{t: time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)}
+	logger := slog.Default()
+
+	repo.players["discord-1"] = &store.Player{
+		ID:        "player-1",
+		DiscordID: "discord-1",
+		DKP:       500,
+	}
+
+	mgr := auction.NewManager(es, repo, logger, tp, clk)
+
+	// Create two auctions: one open, one closed.
+	open, _ := mgr.StartAuction(context.Background(), "Open Sword", "admin", 10, 5*time.Minute)
+	_ = mgr.PlaceBid(context.Background(), open.ID, "discord-1", 50)
+
+	closed, _ := mgr.StartAuction(context.Background(), "Closed Shield", "admin", 10, 5*time.Minute)
+	_ = mgr.PlaceBid(context.Background(), closed.ID, "discord-1", 100)
+	_, _ = mgr.CloseAuction(context.Background(), closed.ID)
+
+	// Simulate a new manager (leader failover — fresh in-memory state).
+	newMgr := auction.NewManager(es, repo, logger, tp, clk)
+
+	n, err := newMgr.RecoverOpenAuctions(context.Background())
+	if err != nil {
+		t.Fatalf("RecoverOpenAuctions() error = %v", err)
+	}
+	if n != 1 {
+		t.Errorf("RecoverOpenAuctions() recovered %d, want 1", n)
+	}
+
+	// The recovered auction should be found (place a higher bid from a different player).
+	repo.players["discord-2"] = &store.Player{
+		ID:        "player-2",
+		DiscordID: "discord-2",
+		DKP:       500,
+	}
+	err = newMgr.PlaceBid(context.Background(), open.ID, "discord-2", 75)
+	if err != nil {
+		t.Errorf("PlaceBid on recovered auction error = %v", err)
+	}
+}
+
+func TestManager_RecoverOpenAuctions_NoneOpen(t *testing.T) {
+	es := &mockEventStore{}
+	repo := newMockPlayerRepo()
+	tp := noop.NewTracerProvider()
+	clk := clock.Mock{T: time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)}
+	logger := slog.Default()
+
+	mgr := auction.NewManager(es, repo, logger, tp, clk)
+
+	// No auctions exist at all.
+	n, err := mgr.RecoverOpenAuctions(context.Background())
+	if err != nil {
+		t.Fatalf("RecoverOpenAuctions() error = %v", err)
+	}
+	if n != 0 {
+		t.Errorf("RecoverOpenAuctions() recovered %d, want 0", n)
+	}
+}
+
+func TestManager_RecoverOpenAuctions_AllClosed(t *testing.T) {
+	es := &mockEventStore{}
+	repo := newMockPlayerRepo()
+	tp := noop.NewTracerProvider()
+	clk := &tickingClock{t: time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)}
+	logger := slog.Default()
+
+	mgr := auction.NewManager(es, repo, logger, tp, clk)
+
+	// Create and close an auction.
+	a, _ := mgr.StartAuction(context.Background(), "All Done", "admin", 10, 5*time.Minute)
+	_, _ = mgr.CloseAuction(context.Background(), a.ID)
+
+	// Simulate failover.
+	newMgr := auction.NewManager(es, repo, logger, tp, clk)
+	n, err := newMgr.RecoverOpenAuctions(context.Background())
+	if err != nil {
+		t.Fatalf("RecoverOpenAuctions() error = %v", err)
+	}
+	if n != 0 {
+		t.Errorf("RecoverOpenAuctions() recovered %d, want 0", n)
 	}
 }

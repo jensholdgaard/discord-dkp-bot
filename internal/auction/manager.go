@@ -152,3 +152,59 @@ func (m *Manager) ReplayAuction(ctx context.Context, auctionID string) (*Auction
 	}
 	return Replay(events)
 }
+
+// RecoverOpenAuctions replays all auctions from the event store and loads
+// any that are still open into the in-memory map. This is used on leader
+// startup to restore state after a failover.
+func (m *Manager) RecoverOpenAuctions(ctx context.Context) (int, error) {
+	ctx, span := m.tracer.Start(ctx, "Manager.RecoverOpenAuctions")
+	defer span.End()
+
+	// Find all auction IDs by loading all "auction.started" events.
+	started, err := m.events.LoadByType(ctx, event.AuctionStarted)
+	if err != nil {
+		return 0, fmt.Errorf("loading auction started events: %w", err)
+	}
+
+	// Deduplicate aggregate IDs.
+	seen := make(map[string]struct{}, len(started))
+	var ids []string
+	for _, e := range started {
+		if _, ok := seen[e.AggregateID]; !ok {
+			seen[e.AggregateID] = struct{}{}
+			ids = append(ids, e.AggregateID)
+		}
+	}
+
+	recovered := 0
+	for _, id := range ids {
+		a, replayErr := m.ReplayAuction(ctx, id)
+		if replayErr != nil {
+			m.logger.WarnContext(ctx, "failed to replay auction during recovery",
+				slog.String("auction_id", id),
+				slog.Any("error", replayErr),
+			)
+			continue
+		}
+		if a.Status != "open" {
+			continue
+		}
+
+		m.mu.Lock()
+		m.auctions[id] = a
+		m.mu.Unlock()
+		recovered++
+
+		m.logger.InfoContext(ctx, "recovered open auction",
+			slog.String("auction_id", id),
+			slog.String("item", a.ItemName),
+			slog.Int("bids", len(a.Bids)),
+		)
+	}
+
+	m.logger.InfoContext(ctx, "auction recovery complete",
+		slog.Int("total_started", len(ids)),
+		slog.Int("recovered_open", recovered),
+	)
+	return recovered, nil
+}

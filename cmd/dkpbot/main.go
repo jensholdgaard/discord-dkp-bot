@@ -17,6 +17,7 @@ import (
 	"github.com/jensholdgaard/discord-dkp-bot/internal/config"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/dkp"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/health"
+	"github.com/jensholdgaard/discord-dkp-bot/internal/leader"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/telemetry"
 
@@ -89,7 +90,7 @@ func run(configPath string) error {
 		},
 	)
 
-	// Start HTTP server for health checks.
+	// Start HTTP server for health checks (runs on all replicas).
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthHandler.LivenessHandler())
 	mux.HandleFunc("/readyz", healthHandler.ReadinessHandler())
@@ -107,34 +108,78 @@ func run(configPath string) error {
 		}
 	}()
 
-	// Start Discord bot.
-	discordBot, err := bot.New(cfg.Discord, dkpMgr, auctionMgr, logger, tp.TracerProvider)
-	if err != nil {
-		return fmt.Errorf("creating bot: %w", err)
+	// startBot is the core work that only the leader should run.
+	startBot := func(ctx context.Context) {
+		// Recover in-flight auctions from the event store so that they
+		// survive leader failover.
+		if n, recoverErr := auctionMgr.RecoverOpenAuctions(ctx); recoverErr != nil {
+			logger.ErrorContext(ctx, "auction recovery failed", slog.Any("error", recoverErr))
+		} else if n > 0 {
+			logger.InfoContext(ctx, "recovered open auctions", slog.Int("count", n))
+		}
+
+		discordBot, botErr := bot.New(cfg.Discord, dkpMgr, auctionMgr, logger, tp.TracerProvider)
+		if botErr != nil {
+			logger.ErrorContext(ctx, "creating bot failed", slog.Any("error", botErr))
+			return
+		}
+
+		if botErr = discordBot.Start(ctx); botErr != nil {
+			logger.ErrorContext(ctx, "starting bot failed", slog.Any("error", botErr))
+			return
+		}
+
+		healthHandler.SetReady(true)
+		logger.InfoContext(ctx, "dkpbot is running (leader)", slog.String("version", version))
+
+		// Block until leadership is lost or process is shutting down.
+		<-ctx.Done()
+
+		healthHandler.SetReady(false)
+		if stopErr := discordBot.Stop(); stopErr != nil {
+			logger.Error("bot shutdown error", slog.Any("error", stopErr))
+		}
 	}
 
-	if err := discordBot.Start(ctx); err != nil {
-		return fmt.Errorf("starting bot: %w", err)
+	if cfg.LeaderElection.Enabled {
+		logger.InfoContext(ctx, "leader election enabled, waiting for leadership...")
+
+		if leaderErr := leader.Run(ctx, cfg.LeaderElection, logger, startBot, func() {
+			logger.Info("lost leadership, shutting down...")
+			cancel()
+		}); leaderErr != nil {
+			return fmt.Errorf("leader election: %w", leaderErr)
+		}
+	} else {
+		// No leader election — run directly.
+		discordBot, botErr := bot.New(cfg.Discord, dkpMgr, auctionMgr, logger, tp.TracerProvider)
+		if botErr != nil {
+			return fmt.Errorf("creating bot: %w", botErr)
+		}
+
+		if botErr = discordBot.Start(ctx); botErr != nil {
+			return fmt.Errorf("starting bot: %w", botErr)
+		}
+
+		healthHandler.SetReady(true)
+		logger.InfoContext(ctx, "dkpbot is running", slog.String("version", version))
+
+		// Wait for shutdown signal.
+		<-ctx.Done()
+		logger.Info("shutting down...")
+
+		healthHandler.SetReady(false)
+
+		if stopErr := discordBot.Stop(); stopErr != nil {
+			logger.Error("bot shutdown error", slog.Any("error", stopErr))
+		}
 	}
-
-	healthHandler.SetReady(true)
-	logger.InfoContext(ctx, "dkpbot is running", slog.String("version", version))
-
-	// Wait for shutdown signal.
-	<-ctx.Done()
-	logger.Info("shutting down...")
-
-	healthHandler.SetReady(false)
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer shutdownCancel()
 
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("http server shutdown error", slog.Any("error", err))
-	}
-
-	if err := discordBot.Stop(); err != nil {
-		logger.Error("bot shutdown error", slog.Any("error", err))
 	}
 
 	logger.Info("shutdown complete")

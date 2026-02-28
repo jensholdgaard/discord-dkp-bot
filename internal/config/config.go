@@ -10,10 +10,11 @@ import (
 
 // Config represents the application configuration.
 type Config struct {
-	Discord   DiscordConfig   `yaml:"discord"`
-	Database  DatabaseConfig  `yaml:"database"`
-	Server    ServerConfig    `yaml:"server"`
-	Telemetry TelemetryConfig `yaml:"telemetry"`
+	Discord        DiscordConfig        `yaml:"discord"`
+	Database       DatabaseConfig       `yaml:"database"`
+	Server         ServerConfig         `yaml:"server"`
+	Telemetry      TelemetryConfig      `yaml:"telemetry"`
+	LeaderElection LeaderElectionConfig `yaml:"leader_election"`
 }
 
 // DiscordConfig holds Discord bot settings.
@@ -55,6 +56,16 @@ type TelemetryConfig struct {
 	Insecure       bool   `yaml:"insecure"`
 }
 
+// LeaderElectionConfig holds Kubernetes leader election settings.
+type LeaderElectionConfig struct {
+	Enabled        bool          `yaml:"enabled"`
+	LeaseName      string        `yaml:"lease_name"`
+	LeaseNamespace string        `yaml:"lease_namespace"`
+	LeaseDuration  time.Duration `yaml:"lease_duration"`
+	RenewDeadline  time.Duration `yaml:"renew_deadline"`
+	RetryPeriod    time.Duration `yaml:"retry_period"`
+}
+
 // Load reads a YAML configuration file from the given path.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -76,6 +87,14 @@ func Load(path string) (*Config, error) {
 		Telemetry: TelemetryConfig{
 			ServiceName:    "dkpbot",
 			ServiceVersion: "0.1.0",
+		},
+		LeaderElection: LeaderElectionConfig{
+			Enabled:        false,
+			LeaseName:      "dkpbot-leader",
+			LeaseNamespace: "default",
+			LeaseDuration:  15 * time.Second,
+			RenewDeadline:  10 * time.Second,
+			RetryPeriod:    2 * time.Second,
 		},
 	}
 
