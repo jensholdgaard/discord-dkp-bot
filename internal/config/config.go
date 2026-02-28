@@ -28,7 +28,7 @@ type DatabaseConfig struct {
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
 	User     string `yaml:"user"`
-	Password string `yaml:"password"`
+	Password string `yaml:"password"` //nolint:gosec // G117: struct field, not a hardcoded credential
 	DBName   string `yaml:"dbname"`
 	SSLMode  string `yaml:"sslmode"`
 	Driver   string `yaml:"driver"` // "sqlx" or "ent"
@@ -68,7 +68,7 @@ type LeaderElectionConfig struct {
 
 // Load reads a YAML configuration file from the given path.
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is from a CLI flag, not user input
 	if err != nil {
 		return nil, fmt.Errorf("reading config file: %w", err)
 	}

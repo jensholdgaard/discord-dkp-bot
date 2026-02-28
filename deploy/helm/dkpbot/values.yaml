@@ -1,4 +1,4 @@
-replicaCount: 1
+replicaCount: 3
 
 image:
   repository: ghcr.io/jensholdgaard/dkpbot
@@ -58,3 +58,10 @@ readinessProbe:
     port: http
   initialDelaySeconds: 5
   periodSeconds: 10
+
+leaderElection:
+  enabled: true
+  leaseName: "dkpbot-leader"
+  leaseDuration: "15s"
+  renewDeadline: "10s"
+  retryPeriod: "2s"

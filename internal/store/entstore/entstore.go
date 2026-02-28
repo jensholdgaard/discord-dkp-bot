@@ -58,7 +58,10 @@ func Connect(ctx context.Context, cfg config.DatabaseConfig) (*sql.DB, error) {
 	}
 
 	if err := db.PingContext(ctx); err != nil {
-		db.Close()
+		closeErr := db.Close()
+		if closeErr != nil {
+			return nil, fmt.Errorf("pinging ent database: %w (close error: %v)", err, closeErr)
+		}
 		return nil, fmt.Errorf("pinging ent database: %w", err)
 	}
 

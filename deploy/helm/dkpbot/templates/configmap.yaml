@@ -25,3 +25,10 @@ data:
       service_version: {{ .Values.config.telemetry.service_version | quote }}
       otlp_endpoint: {{ .Values.config.telemetry.otlp_endpoint | quote }}
       insecure: {{ .Values.config.telemetry.insecure }}
+    leader_election:
+      enabled: {{ .Values.leaderElection.enabled }}
+      lease_name: {{ .Values.leaderElection.leaseName | quote }}
+      lease_namespace: {{ .Release.Namespace | quote }}
+      lease_duration: {{ .Values.leaderElection.leaseDuration | quote }}
+      renew_deadline: {{ .Values.leaderElection.renewDeadline | quote }}
+      retry_period: {{ .Values.leaderElection.retryPeriod | quote }}
