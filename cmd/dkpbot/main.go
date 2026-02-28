@@ -12,6 +12,7 @@ import (
 
 	"github.com/jensholdgaard/discord-dkp-bot/internal/auction"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/bot"
+	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/config"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/dkp"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/health"
@@ -60,6 +61,7 @@ func run(configPath string) error {
 	}()
 
 	logger := tp.Logger
+	clk := clock.Real{}
 
 	// Connect to database.
 	db, err := postgres.Connect(ctx, cfg.Database)
@@ -71,14 +73,14 @@ func run(configPath string) error {
 	logger.InfoContext(ctx, "connected to database")
 
 	// Initialize repositories and managers.
-	playerRepo := postgres.NewPlayerRepo(db)
+	playerRepo := postgres.NewPlayerRepo(db, clk)
 	eventStore := postgres.NewEventStore(db)
 
-	dkpMgr := dkp.NewManager(playerRepo, eventStore, logger)
-	auctionMgr := auction.NewManager(eventStore, playerRepo, logger)
+	dkpMgr := dkp.NewManager(playerRepo, eventStore, logger, tp.TracerProvider)
+	auctionMgr := auction.NewManager(eventStore, playerRepo, logger, tp.TracerProvider, clk)
 
 	// Setup health checks.
-	healthHandler := health.NewHandler(
+	healthHandler := health.NewHandler(clk,
 		health.Checker{
 			Name: "database",
 			Check: func(ctx context.Context) error {
@@ -105,7 +107,7 @@ func run(configPath string) error {
 	}()
 
 	// Start Discord bot.
-	discordBot, err := bot.New(cfg.Discord, dkpMgr, auctionMgr, logger)
+	discordBot, err := bot.New(cfg.Discord, dkpMgr, auctionMgr, logger, tp.TracerProvider)
 	if err != nil {
 		return fmt.Errorf("creating bot: %w", err)
 	}

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
 )
 
 // Status represents a health check result.
@@ -26,11 +28,12 @@ type Handler struct {
 	mu       sync.RWMutex
 	ready    bool
 	checkers []Checker
+	clock    clock.Clock
 }
 
 // NewHandler creates a new health handler with the given checkers.
-func NewHandler(checkers ...Checker) *Handler {
-	return &Handler{checkers: checkers}
+func NewHandler(clk clock.Clock, checkers ...Checker) *Handler {
+	return &Handler{checkers: checkers, clock: clk}
 }
 
 // SetReady marks the service as ready to receive traffic.
@@ -45,7 +48,7 @@ func (h *Handler) LivenessHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, Status{
 			Status:    "ok",
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			Timestamp: h.clock.Now().UTC().Format(time.RFC3339),
 		})
 	}
 }
@@ -60,7 +63,7 @@ func (h *Handler) ReadinessHandler() http.HandlerFunc {
 		if !ready {
 			writeJSON(w, http.StatusServiceUnavailable, Status{
 				Status:    "not_ready",
-				Timestamp: time.Now().UTC().Format(time.RFC3339),
+				Timestamp: h.clock.Now().UTC().Format(time.RFC3339),
 			})
 			return
 		}
@@ -89,7 +92,7 @@ func (h *Handler) ReadinessHandler() http.HandlerFunc {
 		writeJSON(w, code, Status{
 			Status:    status,
 			Checks:    checks,
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			Timestamp: h.clock.Now().UTC().Format(time.RFC3339),
 		})
 	}
 }

@@ -8,11 +8,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/health"
 )
 
+var testClk = clock.Real{}
+
 func TestLivenessHandler(t *testing.T) {
-	h := health.NewHandler()
+	h := health.NewHandler(testClk)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 
@@ -72,7 +75,7 @@ func TestReadinessHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := health.NewHandler(tt.checkers...)
+			h := health.NewHandler(testClk, tt.checkers...)
 			h.SetReady(tt.ready)
 
 			rec := httptest.NewRecorder()

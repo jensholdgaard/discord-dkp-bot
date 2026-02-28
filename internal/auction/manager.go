@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/event"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
 	"go.opentelemetry.io/otel/attribute"
@@ -21,21 +22,27 @@ type Manager struct {
 	events  event.Store
 	players store.PlayerRepository
 	logger  *slog.Logger
+	tracer  trace.Tracer
+	tp      trace.TracerProvider
+	clock   clock.Clock
 }
 
 // NewManager creates a new auction Manager.
-func NewManager(events event.Store, players store.PlayerRepository, logger *slog.Logger) *Manager {
+func NewManager(events event.Store, players store.PlayerRepository, logger *slog.Logger, tp trace.TracerProvider, clk clock.Clock) *Manager {
 	return &Manager{
 		auctions: make(map[string]*Auction),
 		events:   events,
 		players:  players,
 		logger:   logger,
+		tracer:   tp.Tracer("github.com/jensholdgaard/discord-dkp-bot/internal/auction"),
+		tp:       tp,
+		clock:    clk,
 	}
 }
 
 // StartAuction creates and tracks a new auction.
 func (m *Manager) StartAuction(ctx context.Context, itemName, startedBy string, minBid int, duration time.Duration) (*Auction, error) {
-	ctx, span := tracer.Start(ctx, "Manager.StartAuction",
+	ctx, span := m.tracer.Start(ctx, "Manager.StartAuction",
 		trace.WithAttributes(
 			attribute.String("item", itemName),
 			attribute.String("started_by", startedBy),
@@ -43,8 +50,8 @@ func (m *Manager) StartAuction(ctx context.Context, itemName, startedBy string, 
 	)
 	defer span.End()
 
-	id := fmt.Sprintf("auction-%d", time.Now().UnixNano())
-	a := New(id, itemName, startedBy, minBid, duration)
+	id := fmt.Sprintf("auction-%d", m.clock.Now().UnixNano())
+	a := New(id, itemName, startedBy, minBid, duration, m.tp, m.clock)
 
 	// Persist initial events.
 	if err := m.events.Append(ctx, a.PendingEvents()...); err != nil {
@@ -64,7 +71,7 @@ func (m *Manager) StartAuction(ctx context.Context, itemName, startedBy string, 
 
 // PlaceBid places a bid on an active auction.
 func (m *Manager) PlaceBid(ctx context.Context, auctionID, discordID string, amount int) error {
-	ctx, span := tracer.Start(ctx, "Manager.PlaceBid",
+	ctx, span := m.tracer.Start(ctx, "Manager.PlaceBid",
 		trace.WithAttributes(
 			attribute.String("auction_id", auctionID),
 			attribute.String("discord_id", discordID),
@@ -101,7 +108,7 @@ func (m *Manager) PlaceBid(ctx context.Context, auctionID, discordID string, amo
 
 // CloseAuction closes an auction and returns a result message.
 func (m *Manager) CloseAuction(ctx context.Context, auctionID string) (string, error) {
-	ctx, span := tracer.Start(ctx, "Manager.CloseAuction",
+	ctx, span := m.tracer.Start(ctx, "Manager.CloseAuction",
 		trace.WithAttributes(attribute.String("auction_id", auctionID)),
 	)
 	defer span.End()

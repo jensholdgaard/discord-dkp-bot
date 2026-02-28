@@ -8,32 +8,31 @@ import (
 
 	"github.com/jensholdgaard/discord-dkp-bot/internal/event"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
-
-var tracer = otel.Tracer("github.com/jensholdgaard/discord-dkp-bot/internal/dkp")
 
 // Manager handles DKP operations.
 type Manager struct {
 	players store.PlayerRepository
 	events  event.Store
 	logger  *slog.Logger
+	tracer  trace.Tracer
 }
 
 // NewManager returns a new DKP Manager.
-func NewManager(players store.PlayerRepository, events event.Store, logger *slog.Logger) *Manager {
+func NewManager(players store.PlayerRepository, events event.Store, logger *slog.Logger, tp trace.TracerProvider) *Manager {
 	return &Manager{
 		players: players,
 		events:  events,
 		logger:  logger,
+		tracer:  tp.Tracer("github.com/jensholdgaard/discord-dkp-bot/internal/dkp"),
 	}
 }
 
 // RegisterPlayer registers a new player character.
 func (m *Manager) RegisterPlayer(ctx context.Context, discordID, characterName string) (*store.Player, error) {
-	ctx, span := tracer.Start(ctx, "Manager.RegisterPlayer",
+	ctx, span := m.tracer.Start(ctx, "Manager.RegisterPlayer",
 		trace.WithAttributes(
 			attribute.String("discord_id", discordID),
 			attribute.String("character_name", characterName),
@@ -73,7 +72,7 @@ func (m *Manager) RegisterPlayer(ctx context.Context, discordID, characterName s
 
 // AwardDKP adds DKP to a player.
 func (m *Manager) AwardDKP(ctx context.Context, playerID string, amount int, reason string) error {
-	ctx, span := tracer.Start(ctx, "Manager.AwardDKP",
+	ctx, span := m.tracer.Start(ctx, "Manager.AwardDKP",
 		trace.WithAttributes(
 			attribute.String("player_id", playerID),
 			attribute.Int("amount", amount),
@@ -110,7 +109,7 @@ func (m *Manager) AwardDKP(ctx context.Context, playerID string, amount int, rea
 
 // DeductDKP removes DKP from a player.
 func (m *Manager) DeductDKP(ctx context.Context, playerID string, amount int, reason string) error {
-	ctx, span := tracer.Start(ctx, "Manager.DeductDKP",
+	ctx, span := m.tracer.Start(ctx, "Manager.DeductDKP",
 		trace.WithAttributes(
 			attribute.String("player_id", playerID),
 			attribute.Int("amount", amount),
@@ -147,7 +146,7 @@ func (m *Manager) DeductDKP(ctx context.Context, playerID string, amount int, re
 
 // GetPlayer returns a player by Discord ID.
 func (m *Manager) GetPlayer(ctx context.Context, discordID string) (*store.Player, error) {
-	ctx, span := tracer.Start(ctx, "Manager.GetPlayer")
+	ctx, span := m.tracer.Start(ctx, "Manager.GetPlayer")
 	defer span.End()
 
 	return m.players.GetByDiscordID(ctx, discordID)
@@ -155,7 +154,7 @@ func (m *Manager) GetPlayer(ctx context.Context, discordID string) (*store.Playe
 
 // ListPlayers returns all players ordered by DKP.
 func (m *Manager) ListPlayers(ctx context.Context) ([]store.Player, error) {
-	ctx, span := tracer.Start(ctx, "Manager.ListPlayers")
+	ctx, span := m.tracer.Start(ctx, "Manager.ListPlayers")
 	defer span.End()
 
 	return m.players.List(ctx)

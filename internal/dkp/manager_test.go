@@ -9,7 +9,10 @@ import (
 	"github.com/jensholdgaard/discord-dkp-bot/internal/dkp"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/event"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
+	"go.opentelemetry.io/otel/trace/noop"
 )
+
+var testTP = noop.NewTracerProvider()
 
 // mockPlayerRepo implements store.PlayerRepository for testing.
 type mockPlayerRepo struct {
@@ -121,7 +124,7 @@ func TestManager_RegisterPlayer(t *testing.T) {
 			repo := newMockPlayerRepo()
 			es := &mockEventStore{}
 			logger := slog.Default()
-			mgr := dkp.NewManager(repo, es, logger)
+			mgr := dkp.NewManager(repo, es, logger, testTP)
 
 			p, err := mgr.RegisterPlayer(context.Background(), tt.discordID, tt.characterName)
 			if (err != nil) != tt.wantErr {
@@ -166,7 +169,7 @@ func TestManager_AwardDKP(t *testing.T) {
 			repo := newMockPlayerRepo()
 			es := &mockEventStore{}
 			logger := slog.Default()
-			mgr := dkp.NewManager(repo, es, logger)
+			mgr := dkp.NewManager(repo, es, logger, testTP)
 
 			// Register player first.
 			p, _ := mgr.RegisterPlayer(context.Background(), "d1", "Legolas")
@@ -186,7 +189,7 @@ func TestManager_DeductDKP(t *testing.T) {
 	repo := newMockPlayerRepo()
 	es := &mockEventStore{}
 	logger := slog.Default()
-	mgr := dkp.NewManager(repo, es, logger)
+	mgr := dkp.NewManager(repo, es, logger, testTP)
 
 	p, _ := mgr.RegisterPlayer(context.Background(), "d1", "Aragorn")
 	_ = mgr.AwardDKP(context.Background(), p.ID, 100, "seed")

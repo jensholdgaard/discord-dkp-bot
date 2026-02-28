@@ -9,13 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/event"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
-
-var tracer = otel.Tracer("github.com/jensholdgaard/discord-dkp-bot/internal/auction")
 
 // Errors returned by auction operations.
 var (
@@ -45,11 +44,14 @@ type Auction struct {
 	Bids      []Bid
 	Version   int
 
+	tracer trace.Tracer
+	clock  clock.Clock
 	events []event.Event
 }
 
 // New creates a new open auction and records a started event.
-func New(id, itemName, startedBy string, minBid int, duration time.Duration) *Auction {
+// The TracerProvider is used to create a scoped tracer for this auction.
+func New(id, itemName, startedBy string, minBid int, duration time.Duration, tp trace.TracerProvider, clk clock.Clock) *Auction {
 	a := &Auction{
 		ID:        id,
 		ItemName:  itemName,
@@ -57,6 +59,8 @@ func New(id, itemName, startedBy string, minBid int, duration time.Duration) *Au
 		MinBid:    minBid,
 		Status:    "open",
 		Version:   0,
+		tracer:    tp.Tracer("github.com/jensholdgaard/discord-dkp-bot/internal/auction"),
+		clock:     clk,
 	}
 
 	data, _ := json.Marshal(event.AuctionStartedData{
@@ -71,7 +75,7 @@ func New(id, itemName, startedBy string, minBid int, duration time.Duration) *Au
 
 // PlaceBid places a bid on the auction. Thread-safe.
 func (a *Auction) PlaceBid(ctx context.Context, playerID string, amount int, playerDKP int) error {
-	ctx, span := tracer.Start(ctx, "Auction.PlaceBid",
+	ctx, span := a.tracer.Start(ctx, "Auction.PlaceBid",
 		trace.WithAttributes(
 			attribute.String("auction.id", a.ID),
 			attribute.String("player.id", playerID),
@@ -106,7 +110,7 @@ func (a *Auction) PlaceBid(ctx context.Context, playerID string, amount int, pla
 	a.Bids = append(a.Bids, Bid{
 		PlayerID: playerID,
 		Amount:   amount,
-		Time:     time.Now().UTC(),
+		Time:     a.clock.Now().UTC(),
 	})
 
 	data, _ := json.Marshal(event.BidPlacedData{
@@ -125,7 +129,7 @@ func (a *Auction) PlaceBid(ctx context.Context, playerID string, amount int, pla
 
 // Close closes the auction, awarding the item to the highest bidder.
 func (a *Auction) Close(ctx context.Context) (winner *Bid, err error) {
-	_, span := tracer.Start(ctx, "Auction.Close",
+	_, span := a.tracer.Start(ctx, "Auction.Close",
 		trace.WithAttributes(attribute.String("auction.id", a.ID)),
 	)
 	defer span.End()
@@ -157,7 +161,7 @@ func (a *Auction) Close(ctx context.Context) (winner *Bid, err error) {
 
 // Cancel cancels the auction.
 func (a *Auction) Cancel(ctx context.Context) error {
-	_, span := tracer.Start(ctx, "Auction.Cancel",
+	_, span := a.tracer.Start(ctx, "Auction.Cancel",
 		trace.WithAttributes(attribute.String("auction.id", a.ID)),
 	)
 	defer span.End()
@@ -212,7 +216,10 @@ func Replay(events []event.Event) (*Auction, error) {
 		return nil, fmt.Errorf("no events to replay")
 	}
 
-	a := &Auction{}
+	a := &Auction{
+		tracer: noop.NewTracerProvider().Tracer("auction"),
+		clock:  clock.Real{},
+	}
 	for _, e := range events {
 		switch e.Type {
 		case event.AuctionStarted:
