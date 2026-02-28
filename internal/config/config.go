@@ -83,5 +83,20 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config file: %w", err)
 	}
 
+	if err := cfg.validate(); err != nil {
+		return nil, fmt.Errorf("validating config: %w", err)
+	}
+
 	return cfg, nil
+}
+
+// validate checks configuration invariants.
+func (c *Config) validate() error {
+	switch c.Database.Driver {
+	case "sqlx", "ent":
+		// valid
+	default:
+		return fmt.Errorf("unsupported database driver %q: must be \"sqlx\" or \"ent\"", c.Database.Driver)
+	}
+	return nil
 }

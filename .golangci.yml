@@ -1,6 +1,6 @@
 run:
   timeout: 5m
-  go: "1.23"
+  go: "1.24"
 
 linters:
   enable:
@@ -18,10 +18,9 @@ linters:
     - noctx
     - gosec
     - prealloc
+    - shadow
 
 linters-settings:
-  govet:
-    shadow: true
   goimports:
     local-prefixes: github.com/jensholdgaard/discord-dkp-bot
   misspell:

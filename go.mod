@@ -8,6 +8,7 @@ require (
 	github.com/XSAM/otelsql v0.41.0
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/jmoiron/sqlx v1.4.0
+	github.com/lib/pq v1.10.9
 	go.opentelemetry.io/contrib/bridges/otelslog v0.15.0
 	go.opentelemetry.io/otel v1.40.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.16.0
