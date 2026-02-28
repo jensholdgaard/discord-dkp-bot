@@ -67,12 +67,23 @@ type LeaderElectionConfig struct {
 	RetryPeriod    time.Duration `yaml:"retry_period"`
 }
 
+// expandEnv resolves ${VAR} and $VAR placeholders in raw config bytes
+// from environment variables, following the CNCF convention used by the
+// OpenTelemetry Collector, Prometheus, and similar projects.
+func expandEnv(data []byte) []byte {
+	return []byte(os.Expand(string(data), os.Getenv))
+}
+
 // Load reads a YAML configuration file from the given path.
+// Environment variable references (${VAR} or $VAR) in the YAML are
+// expanded before parsing.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return nil, fmt.Errorf("reading config file: %w", err)
 	}
+
+	data = expandEnv(data)
 
 	cfg := &Config{
 		Server: ServerConfig{

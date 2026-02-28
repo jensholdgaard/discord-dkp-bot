@@ -148,6 +148,119 @@ func TestLoad_FileNotFound(t *testing.T) {
 	}
 }
 
+func TestLoad_EnvVarExpansion(t *testing.T) {
+	tests := []struct {
+		name  string
+		yaml  string
+		env   map[string]string
+		check func(t *testing.T, cfg *config.Config)
+	}{
+		{
+			name: "dollar-brace syntax",
+			yaml: `
+discord:
+  token: ${DISCORD_TOKEN}
+  guild_id: "123"
+database:
+  user: ${DB_USER}
+  password: ${DB_PASSWORD}
+`,
+			env: map[string]string{
+				"DISCORD_TOKEN": "tok-from-env",
+				"DB_USER":       "envuser",
+				"DB_PASSWORD":   "envpass",
+			},
+			check: func(t *testing.T, cfg *config.Config) {
+				t.Helper()
+				if cfg.Discord.Token != "tok-from-env" {
+					t.Errorf("token = %q, want %q", cfg.Discord.Token, "tok-from-env")
+				}
+				if cfg.Database.User != "envuser" {
+					t.Errorf("db user = %q, want %q", cfg.Database.User, "envuser")
+				}
+				if cfg.Database.Password != "envpass" {
+					t.Errorf("db password = %q, want %q", cfg.Database.Password, "envpass")
+				}
+			},
+		},
+		{
+			name: "unset var expands to empty",
+			yaml: `
+discord:
+  token: ${UNSET_VAR_12345}
+`,
+			env: map[string]string{},
+			check: func(t *testing.T, cfg *config.Config) {
+				t.Helper()
+				if cfg.Discord.Token != "" {
+					t.Errorf("token = %q, want empty", cfg.Discord.Token)
+				}
+			},
+		},
+		{
+			name: "mixed literal and env",
+			yaml: `
+discord:
+  token: "literal-token"
+database:
+  user: ${DB_USER}
+  password: "literal-pass"
+`,
+			env: map[string]string{
+				"DB_USER": "fromenv",
+			},
+			check: func(t *testing.T, cfg *config.Config) {
+				t.Helper()
+				if cfg.Discord.Token != "literal-token" {
+					t.Errorf("token = %q, want %q", cfg.Discord.Token, "literal-token")
+				}
+				if cfg.Database.User != "fromenv" {
+					t.Errorf("db user = %q, want %q", cfg.Database.User, "fromenv")
+				}
+				if cfg.Database.Password != "literal-pass" {
+					t.Errorf("db password = %q, want %q", cfg.Database.Password, "literal-pass")
+				}
+			},
+		},
+		{
+			name: "dollar without braces",
+			yaml: `
+discord:
+  token: $SIMPLE_TOKEN
+`,
+			env: map[string]string{
+				"SIMPLE_TOKEN": "simple-val",
+			},
+			check: func(t *testing.T, cfg *config.Config) {
+				t.Helper()
+				if cfg.Discord.Token != "simple-val" {
+					t.Errorf("token = %q, want %q", cfg.Discord.Token, "simple-val")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			dir := t.TempDir()
+			path := filepath.Join(dir, "config.yaml")
+			if err := os.WriteFile(path, []byte(tt.yaml), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			cfg, err := config.Load(path)
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			tt.check(t, cfg)
+		})
+	}
+}
+
 func TestDatabaseConfig_DSN(t *testing.T) {
 	cfg := config.DatabaseConfig{
 		Host:     "localhost",
