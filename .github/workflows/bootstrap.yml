@@ -163,8 +163,72 @@ jobs:
       - name: "Step 5: Wait for workload cluster"
         run: |
           echo "Waiting for workload cluster (up to 15 minutes)..."
-          kubectl wait --for=condition=Ready --timeout=900s \
-            "cluster/${CLUSTER_NAME}"
+          SECONDS=0
+          TIMEOUT=900
+          INTERVAL=30
+          while (( SECONDS < TIMEOUT )); do
+            # Check if cluster is ready without blocking
+            READY=$(kubectl get cluster "${CLUSTER_NAME}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+            if [[ "${READY}" == "True" ]]; then
+              echo "✅ Cluster ${CLUSTER_NAME} is Ready after ${SECONDS}s"
+              exit 0
+            fi
+
+            echo "──── Status at ${SECONDS}s ────"
+            echo "▸ Cluster:"
+            kubectl get cluster "${CLUSTER_NAME}" -o wide 2>/dev/null || true
+            echo "▸ HetznerCluster:"
+            kubectl get hetznercluster "${CLUSTER_NAME}" -o wide 2>/dev/null || true
+            echo "▸ KubeadmControlPlane:"
+            kubectl get kubeadmcontrolplane -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" -o wide 2>/dev/null || true
+            echo "▸ Machines:"
+            kubectl get machines -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" -o wide 2>/dev/null || true
+            echo "▸ MachineDeployments:"
+            kubectl get machinedeployment -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" -o wide 2>/dev/null || true
+            echo ""
+
+            if (( SECONDS + INTERVAL >= TIMEOUT )); then
+              break
+            fi
+            sleep "${INTERVAL}"
+          done
+
+          echo "::error::Timed out after ${TIMEOUT}s waiting for cluster/${CLUSTER_NAME} to become Ready"
+          exit 1
+
+      # ── Step 5a: Debug diagnostics on failure ─────────────────
+      - name: "Step 5a: Cluster provisioning diagnostics"
+        if: failure()
+        run: |
+          echo "## 🔍 Cluster Provisioning Diagnostics" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "=== Cluster describe ==="
+          kubectl describe cluster "${CLUSTER_NAME}" 2>/dev/null || true
+          echo ""
+
+          echo "=== HetznerCluster describe ==="
+          kubectl describe hetznercluster "${CLUSTER_NAME}" 2>/dev/null || true
+          echo ""
+
+          echo "=== KubeadmControlPlane describe ==="
+          kubectl describe kubeadmcontrolplane -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" 2>/dev/null || true
+          echo ""
+
+          echo "=== Machines describe ==="
+          kubectl describe machines -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" 2>/dev/null || true
+          echo ""
+
+          echo "=== MachineDeployments describe ==="
+          kubectl describe machinedeployment -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" 2>/dev/null || true
+          echo ""
+
+          echo "=== Cluster API events (last 50) ==="
+          kubectl get events --sort-by='.lastTimestamp' 2>/dev/null | tail -50 || true
+          echo ""
+
+          echo "=== CAPH controller logs (last 80 lines) ==="
+          kubectl logs deployment/caph-controller-manager -n caph-system --tail=80 2>/dev/null || true
 
       # ── Step 6: Get workload kubeconfig ──────────────────────
       - name: "Step 6: Get workload cluster kubeconfig"
