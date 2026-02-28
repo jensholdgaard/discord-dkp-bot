@@ -30,6 +30,7 @@ dockers_v2:
       - "{{ .Tag }}"
       - latest
     dockerfile: Dockerfile
+    sbom: false
     labels:
       org.opencontainers.image.created: "{{.Date}}"
       org.opencontainers.image.title: "{{.ProjectName}}"
