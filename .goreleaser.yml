@@ -21,18 +21,26 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}}
 
-dockers:
-  - image_templates:
-      - "ghcr.io/jensholdgaard/dkpbot:{{ .Tag }}"
-      - "ghcr.io/jensholdgaard/dkpbot:latest"
+dockers_v2:
+  - ids:
+      - dkpbot
+    images:
+      - "ghcr.io/jensholdgaard/dkpbot"
+    tags:
+      - "{{ .Tag }}"
+      - latest
     dockerfile: Dockerfile
-    build_flag_templates:
-      - "--pull"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--platform=linux/amd64"
+    labels:
+      org.opencontainers.image.created: "{{.Date}}"
+      org.opencontainers.image.title: "{{.ProjectName}}"
+      org.opencontainers.image.revision: "{{.FullCommit}}"
+      org.opencontainers.image.version: "{{.Version}}"
+    platforms:
+      - linux/amd64
+
+release:
+  prerelease: auto
+  mode: replace
 
 archives:
   - id: default
