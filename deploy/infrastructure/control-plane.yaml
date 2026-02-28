@@ -1,0 +1,45 @@
+# Cluster API – KubeadmControlPlane for Hetzner
+#
+# Provisions a 3-node HA control plane using kubeadm on Hetzner Cloud.
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: dkpbot-prod-control-plane
+  namespace: default
+spec:
+  replicas: 3
+  version: v1.31.4
+  machineTemplate:
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: HCloudMachineTemplate
+      name: dkpbot-prod-control-plane
+  kubeadmConfigSpec:
+    initConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          cloud-provider: external
+    joinConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          cloud-provider: external
+    clusterConfiguration:
+      apiServer:
+        extraArgs:
+          cloud-provider: external
+      controllerManager:
+        extraArgs:
+          cloud-provider: external
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: HCloudMachineTemplate
+metadata:
+  name: dkpbot-prod-control-plane
+  namespace: default
+spec:
+  template:
+    spec:
+      type: cpx21
+      image:
+        name: ubuntu-22.04

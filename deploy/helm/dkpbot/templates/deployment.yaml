@@ -29,6 +29,33 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            {{- if .Values.cloudnativePG.enabled }}
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cloudnativePG.clusterName }}-app
+                  key: host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cloudnativePG.clusterName }}-app
+                  key: port
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cloudnativePG.clusterName }}-app
+                  key: user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cloudnativePG.clusterName }}-app
+                  key: password
+            - name: DB_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cloudnativePG.clusterName }}-app
+                  key: dbname
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.config.server.port }}

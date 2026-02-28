@@ -19,3 +19,8 @@ dist/
 *.dylib
 coverage.out
 coverage.html
+
+# Infrastructure secrets — never commit
+deploy/infrastructure/*.kubeconfig
+deploy/infrastructure/.env
+config.yaml

@@ -1,4 +1,4 @@
-.PHONY: all build test lint run dev clean docker help setup migrate
+.PHONY: all build test lint run dev clean docker help setup migrate infra-bootstrap observability-install
 
 # Variables
 BINARY_NAME := dkpbot
@@ -85,3 +85,11 @@ clean:
 ## tidy: Tidy go modules
 tidy:
 	$(GO) mod tidy
+
+## infra-bootstrap: Bootstrap Hetzner Cloud Kubernetes cluster via Cluster API
+infra-bootstrap:
+	bash deploy/infrastructure/bootstrap.sh
+
+## observability-install: Install observability stack (Prometheus, Grafana, Loki, Tempo)
+observability-install:
+	bash deploy/observability/install.sh

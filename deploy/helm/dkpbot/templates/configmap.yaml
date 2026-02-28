@@ -10,12 +10,21 @@ data:
       token: {{ .Values.config.discord.token | quote }}
       guild_id: {{ .Values.config.discord.guild_id | quote }}
     database:
+      {{- if .Values.cloudnativePG.enabled }}
+      host: ${DB_HOST}
+      port: ${DB_PORT}
+      user: ${DB_USER}
+      password: ${DB_PASSWORD}
+      dbname: ${DB_DBNAME}
+      sslmode: "require"
+      {{- else }}
       host: {{ .Values.config.database.host | quote }}
       port: {{ .Values.config.database.port }}
       user: {{ .Values.config.database.user | quote }}
       password: {{ .Values.config.database.password | quote }}
       dbname: {{ .Values.config.database.dbname | quote }}
       sslmode: {{ .Values.config.database.sslmode | quote }}
+      {{- end }}
       driver: {{ .Values.config.database.driver | quote }}
     server:
       port: {{ .Values.config.server.port }}

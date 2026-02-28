@@ -1,0 +1,25 @@
+# CloudNative-PG Operator Installation
+#
+# Install the CNPG operator using kubectl. Alternatively, use Helm:
+#   helm repo add cnpg https://cloudnative-pg.github.io/charts
+#   helm install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace
+#
+# This file uses the upstream manifest for simplicity.
+# Pin to a specific version for reproducibility.
+#
+# Apply with:
+#   kubectl apply -f operator.yaml
+#
+# To install via manifest (latest stable):
+#   kubectl apply --server-side -f \
+#     https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.25/releases/cnpg-1.25.1.yaml
+#
+# After installation, verify the operator is running:
+#   kubectl get deployment -n cnpg-system cnpg-controller-manager
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cnpg-system
+  labels:
+    app.kubernetes.io/name: cloudnative-pg
