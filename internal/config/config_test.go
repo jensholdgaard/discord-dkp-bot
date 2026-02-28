@@ -80,6 +80,46 @@ discord:
 			yaml:    `{{{invalid`,
 			wantErr: true,
 		},
+		{
+			name: "ent driver accepted",
+			yaml: `
+discord:
+  token: "tok"
+database:
+  driver: "ent"
+`,
+			wantErr: false,
+			check: func(t *testing.T, cfg *config.Config) {
+				t.Helper()
+				if cfg.Database.Driver != "ent" {
+					t.Errorf("got driver %q, want %q", cfg.Database.Driver, "ent")
+				}
+			},
+		},
+		{
+			name: "invalid driver rejected",
+			yaml: `
+discord:
+  token: "tok"
+database:
+  driver: "mongodb"
+`,
+			wantErr: true,
+		},
+		{
+			name: "default driver is sqlx",
+			yaml: `
+discord:
+  token: "tok"
+`,
+			wantErr: false,
+			check: func(t *testing.T, cfg *config.Config) {
+				t.Helper()
+				if cfg.Database.Driver != "sqlx" {
+					t.Errorf("got driver %q, want %q", cfg.Database.Driver, "sqlx")
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

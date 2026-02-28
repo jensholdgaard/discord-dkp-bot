@@ -16,8 +16,12 @@ import (
 	"github.com/jensholdgaard/discord-dkp-bot/internal/config"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/dkp"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/health"
-	"github.com/jensholdgaard/discord-dkp-bot/internal/store/postgres"
+	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/telemetry"
+
+	// Register store drivers so they are available via store.Open.
+	_ "github.com/jensholdgaard/discord-dkp-bot/internal/store/entstore"
+	_ "github.com/jensholdgaard/discord-dkp-bot/internal/store/postgres"
 )
 
 var version = "dev"
@@ -63,29 +67,24 @@ func run(configPath string) error {
 	logger := tp.Logger
 	clk := clock.Real{}
 
-	// Connect to database.
-	db, err := postgres.Connect(ctx, cfg.Database)
+	// Open store using the configured driver (sqlx or ent).
+	repos, err := store.Open(ctx, cfg.Database, clk)
 	if err != nil {
-		return fmt.Errorf("connecting to database: %w", err)
+		return fmt.Errorf("opening store (driver=%s): %w", cfg.Database.Driver, err)
 	}
-	defer db.Close()
+	defer repos.Closer.Close()
 
-	logger.InfoContext(ctx, "connected to database")
+	logger.InfoContext(ctx, "connected to database", slog.String("driver", cfg.Database.Driver))
 
-	// Initialize repositories and managers.
-	playerRepo := postgres.NewPlayerRepo(db, clk)
-	eventStore := postgres.NewEventStore(db)
-
-	dkpMgr := dkp.NewManager(playerRepo, eventStore, logger, tp.TracerProvider)
-	auctionMgr := auction.NewManager(eventStore, playerRepo, logger, tp.TracerProvider, clk)
+	// Initialize managers.
+	dkpMgr := dkp.NewManager(repos.Players, repos.Events, logger, tp.TracerProvider)
+	auctionMgr := auction.NewManager(repos.Events, repos.Players, logger, tp.TracerProvider, clk)
 
 	// Setup health checks.
 	healthHandler := health.NewHandler(clk,
 		health.Checker{
 			Name: "database",
-			Check: func(ctx context.Context) error {
-				return db.PingContext(ctx)
-			},
+			Check: repos.Ping,
 		},
 	)
 

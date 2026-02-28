@@ -3,12 +3,34 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/XSAM/otelsql"
+	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/config"
+	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
 	"github.com/jmoiron/sqlx"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
+
+func init() {
+	store.Register("sqlx", openSQLX)
+}
+
+// openSQLX is the store.Driver for the "sqlx" backend.
+func openSQLX(ctx context.Context, cfg config.DatabaseConfig, clk clock.Clock) (*store.Repositories, error) {
+	db, err := Connect(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &store.Repositories{
+		Players:  NewPlayerRepo(db, clk),
+		Auctions: NewAuctionRepo(db, clk),
+		Events:   NewEventStore(db),
+		Closer:   io.NopCloser(nil), // sqlx.DB.Close is called separately via db reference
+		Ping:     db.PingContext,
+	}, nil
+}
 
 // Connect opens and verifies a Postgres connection with OTEL instrumentation.
 func Connect(ctx context.Context, cfg config.DatabaseConfig) (*sqlx.DB, error) {
