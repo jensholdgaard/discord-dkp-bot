@@ -1,6 +1,15 @@
 name: Bootstrap Infrastructure
 
 # Manual trigger only — not part of CI.
+#
+# NOTE: workflow_dispatch only appears in the Actions UI when this file
+# exists on the default branch (main).  To trigger from a feature branch
+# before merging, use the GitHub CLI:
+#
+#   gh workflow run bootstrap.yml --ref <branch-name> \
+#     -f hcloud_region=nbg1 \
+#     -f flux_branch=<branch-name>
+#
 on:
   workflow_dispatch:
     inputs:
