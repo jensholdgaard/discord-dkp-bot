@@ -47,7 +47,12 @@ spec:
     hcloud:
       - name: dkpbot-ssh
   controlPlaneLoadBalancer:
+    enabled: true
     region: nbg1
+    type: lb11
+    port: 6443
+    algorithm:
+      type: round_robin
   hetznerSecretRef:
     name: hetzner
     key:

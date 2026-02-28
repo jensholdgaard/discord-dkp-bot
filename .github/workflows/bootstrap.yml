@@ -90,6 +90,21 @@ jobs:
             echo "::error::HCLOUD_TOKEN secret is not set. Configure it in Settings → Secrets."
             exit 1
           fi
+
+          # Verify the token is valid by making a lightweight API call
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
+            "https://api.hetzner.cloud/v1/locations?per_page=1") || true
+          if [[ "${HTTP_CODE}" == "401" || "${HTTP_CODE}" == "403" ]]; then
+            echo "::error::HCLOUD_TOKEN is set but invalid (HTTP ${HTTP_CODE}). Verify your Hetzner Cloud API token in Settings → Secrets."
+            exit 1
+          fi
+          if [[ "${HTTP_CODE}" != "200" ]]; then
+            echo "::warning::Could not validate HCLOUD_TOKEN (HTTP ${HTTP_CODE}). Continuing anyway."
+          else
+            echo "✅ HCLOUD_TOKEN is valid."
+          fi
+
           if [[ -z "${{ secrets.CNPG_S3_ACCESS_KEY }}" ]]; then
             echo "::warning::CNPG_S3_ACCESS_KEY secret is not set. CNPG backups will not work until you create the backup-s3-credentials Secret manually."
           fi
@@ -203,6 +218,18 @@ jobs:
           kubectl apply -f deploy/infrastructure/cluster.yaml
           kubectl apply -f /tmp/control-plane.yaml
           kubectl apply -f /tmp/workers.yaml
+
+          # Verify CAPH controller is still healthy after applying manifests
+          echo "Waiting 15s for controller to reconcile..."
+          sleep 15
+          RESTARTS=$(kubectl get pod -n caph-system -l control-plane=caph-controller-manager \
+            -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}' 2>/dev/null || echo "0")
+          if [[ "${RESTARTS}" -gt 0 ]]; then
+            echo "::warning::CAPH controller has restarted ${RESTARTS} time(s). Checking logs for panics..."
+            kubectl logs deployment/caph-controller-manager -n caph-system --tail=30 2>&1 || true
+          else
+            echo "✅ CAPH controller is healthy (0 restarts)."
+          fi
 
       # ── Step 4a: Start background provisioning logger ────────
       - name: "Step 4a: Start provisioning debug logger"
