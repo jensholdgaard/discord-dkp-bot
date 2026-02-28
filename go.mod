@@ -6,6 +6,7 @@ toolchain go1.24.13
 
 require (
 	github.com/XSAM/otelsql v0.41.0
+	github.com/bwmarrin/discordgo v0.29.0
 	github.com/jmoiron/sqlx v1.4.0
 	go.opentelemetry.io/contrib/bridges/otelslog v0.15.0
 	go.opentelemetry.io/otel v1.40.0
@@ -20,7 +21,6 @@ require (
 )
 
 require (
-	github.com/bwmarrin/discordgo v0.29.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
