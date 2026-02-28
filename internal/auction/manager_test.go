@@ -350,7 +350,7 @@ func TestReplay_EmptyEvents(t *testing.T) {
 	}
 }
 
-func TestReplay_CancelledStatus(t *testing.T) {
+func TestReplay_CanceledStatus(t *testing.T) {
 	tp := noop.NewTracerProvider()
 	clk := clock.Mock{T: time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)}
 

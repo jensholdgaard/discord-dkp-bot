@@ -62,7 +62,7 @@ func (r *AuctionRepo) Close(ctx context.Context, id string, winnerID string, amo
 func (r *AuctionRepo) Cancel(ctx context.Context, id string) error {
 	now := r.clock.Now().UTC()
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE auctions SET status = 'cancelled', closed_at = $1 WHERE id = $2 AND status = 'open'`,
+		`UPDATE auctions SET status = 'canceled', closed_at = $1 WHERE id = $2 AND status = 'open'`,
 		now, id,
 	)
 	if err != nil {
