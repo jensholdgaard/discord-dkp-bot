@@ -41,6 +41,10 @@ metadata:
 spec:
   controlPlaneRegions:
     - nbg1
+  # controlPlaneEndpoint is required when controlPlaneLoadBalancer is enabled.
+  # CAPH will populate 'host' with the load balancer IP once created.
+  # Omitting this causes a nil pointer panic in CAPH (see
+  # syself/cluster-api-provider-hetzner#1534).
   controlPlaneEndpoint:
     host: ""
     port: 6443

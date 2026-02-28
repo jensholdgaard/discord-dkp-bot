@@ -116,10 +116,10 @@ kubectl apply -f /tmp/control-plane.yaml
 kubectl apply -f /tmp/workers.yaml
 
 echo "==> Step 5: Wait for workload cluster to be provisioned"
-echo "    This may take 5-10 minutes..."
-kubectl wait --for=condition=Ready --timeout=600s \
+echo "    This may take 10-20 minutes (plain Ubuntu images need time to install K8s components)..."
+kubectl wait --for=condition=Ready --timeout=1200s \
   "cluster/${CLUSTER_NAME}" || {
-    echo "Cluster not ready after 10 minutes. Check:"
+    echo "Cluster not ready after 20 minutes. Check:"
     echo "  kubectl describe cluster ${CLUSTER_NAME}"
     exit 1
   }
