@@ -41,5 +41,4 @@ spec:
   template:
     spec:
       type: cpx21
-      image:
-        name: ubuntu-22.04
+      imageName: ubuntu-22.04
