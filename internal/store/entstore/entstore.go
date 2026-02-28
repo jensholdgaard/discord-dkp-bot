@@ -11,7 +11,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io"
 
 	"github.com/XSAM/otelsql"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
@@ -20,6 +19,11 @@ import (
 	_ "github.com/lib/pq" // postgres driver
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
+
+// closerFunc adapts a func() error into an io.Closer.
+type closerFunc func() error
+
+func (f closerFunc) Close() error { return f() }
 
 func init() {
 	store.Register("ent", openEnt)
@@ -35,7 +39,7 @@ func openEnt(ctx context.Context, cfg config.DatabaseConfig, clk clock.Clock) (*
 		Players:  NewPlayerRepo(db, clk),
 		Auctions: NewAuctionRepo(db, clk),
 		Events:   NewEventStore(db),
-		Closer:   io.NopCloser(nil),
+		Closer:   closerFunc(db.Close),
 		Ping:     db.PingContext,
 	}, nil
 }

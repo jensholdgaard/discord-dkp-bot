@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
@@ -67,23 +68,9 @@ func TestRegister(t *testing.T) {
 				t.Fatal("expected error (no DB running), got nil")
 			}
 			// The error should be a connection error, not an unknown-driver error.
-			want := "unknown store driver"
-			if containsStr(err.Error(), want) {
+			if strings.Contains(err.Error(), "unknown store driver") {
 				t.Errorf("expected connection error, got unknown driver error: %v", err)
 			}
 		})
 	}
-}
-
-func containsStr(s, substr string) bool {
-	return len(s) >= len(substr) && searchStr(s, substr)
-}
-
-func searchStr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

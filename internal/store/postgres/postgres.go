@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/XSAM/otelsql"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
@@ -12,6 +11,11 @@ import (
 	"github.com/jmoiron/sqlx"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
+
+// closerFunc adapts a func() error into an io.Closer.
+type closerFunc func() error
+
+func (f closerFunc) Close() error { return f() }
 
 func init() {
 	store.Register("sqlx", openSQLX)
@@ -27,7 +31,7 @@ func openSQLX(ctx context.Context, cfg config.DatabaseConfig, clk clock.Clock) (
 		Players:  NewPlayerRepo(db, clk),
 		Auctions: NewAuctionRepo(db, clk),
 		Events:   NewEventStore(db),
-		Closer:   io.NopCloser(nil), // sqlx.DB.Close is called separately via db reference
+		Closer:   closerFunc(db.Close),
 		Ping:     db.PingContext,
 	}, nil
 }
