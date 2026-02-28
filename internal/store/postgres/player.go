@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
-	"github.com/jmoiron/sqlx"
 )
 
 // PlayerRepo implements store.PlayerRepository with sqlx.

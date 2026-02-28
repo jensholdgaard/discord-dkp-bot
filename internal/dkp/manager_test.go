@@ -6,10 +6,11 @@ import (
 	"log/slog"
 	"testing"
 
+	"go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/jensholdgaard/discord-dkp-bot/internal/dkp"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/event"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
-	"go.opentelemetry.io/otel/trace/noop"
 )
 
 var testTP = noop.NewTracerProvider()
@@ -54,7 +55,7 @@ func (m *mockPlayerRepo) GetByCharacterName(_ context.Context, name string) (*st
 }
 
 func (m *mockPlayerRepo) List(_ context.Context) ([]store.Player, error) {
-	var result []store.Player
+	result := make([]store.Player, 0, len(m.players))
 	for _, p := range m.players {
 		result = append(result, *p)
 	}

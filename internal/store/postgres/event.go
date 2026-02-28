@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jensholdgaard/discord-dkp-bot/internal/event"
 	"github.com/jmoiron/sqlx"
+
+	"github.com/jensholdgaard/discord-dkp-bot/internal/event"
 )
 
 // EventStore implements event.Store backed by Postgres.

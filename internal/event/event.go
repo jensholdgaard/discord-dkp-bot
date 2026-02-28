@@ -9,7 +9,7 @@ import (
 type Type string
 
 const (
-	AuctionStarted  Type = "auction.started"
+	AuctionStarted   Type = "auction.started"
 	AuctionBidPlaced Type = "auction.bid_placed"
 	AuctionClosed    Type = "auction.closed"
 	AuctionCancelled Type = "auction.cancelled"

@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/jensholdgaard/discord-dkp-bot/internal/event"
-	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/jensholdgaard/discord-dkp-bot/internal/event"
+	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
 )
 
 // Manager handles DKP operations.

@@ -13,8 +13,8 @@ import (
 // Status represents a health check result.
 type Status struct {
 	Status    string            `json:"status"`
-	Checks   map[string]string `json:"checks,omitempty"`
-	Timestamp string           `json:"timestamp"`
+	Checks    map[string]string `json:"checks,omitempty"`
+	Timestamp string            `json:"timestamp"`
 }
 
 // Checker defines a named health check function.

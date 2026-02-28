@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jensholdgaard/discord-dkp-bot/internal/config"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
@@ -19,6 +18,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/jensholdgaard/discord-dkp-bot/internal/config"
 )
 
 // Provider holds all telemetry providers for shutdown.
@@ -29,7 +30,7 @@ type Provider struct {
 	Logger         *slog.Logger
 }
 
-// Setup initialises OpenTelemetry traces, metrics and logs.
+// Setup initializes OpenTelemetry traces, metrics and logs.
 func Setup(ctx context.Context, cfg config.TelemetryConfig) (*Provider, error) {
 	res, err := resource.New(ctx,
 		resource.WithAttributes(

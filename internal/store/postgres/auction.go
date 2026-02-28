@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
-	"github.com/jmoiron/sqlx"
 )
 
 // AuctionRepo implements store.AuctionRepository with sqlx.
@@ -61,7 +62,7 @@ func (r *AuctionRepo) Cancel(ctx context.Context, id string) error {
 		now, id,
 	)
 	if err != nil {
-		return fmt.Errorf("cancelling auction: %w", err)
+		return fmt.Errorf("canceling auction: %w", err)
 	}
 	n, _ := result.RowsAffected()
 	if n == 0 {

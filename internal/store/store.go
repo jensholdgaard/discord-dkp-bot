@@ -17,14 +17,14 @@ type Player struct {
 
 // Auction represents an auction record.
 type Auction struct {
-	ID        string    `db:"id"`
-	ItemName  string    `db:"item_name"`
-	StartedBy string    `db:"started_by"`
-	MinBid    int       `db:"min_bid"`
-	Status    string    `db:"status"` // "open", "closed", "cancelled"
-	WinnerID  *string   `db:"winner_id"`
-	WinAmount *int      `db:"win_amount"`
-	CreatedAt time.Time `db:"created_at"`
+	ID        string     `db:"id"`
+	ItemName  string     `db:"item_name"`
+	StartedBy string     `db:"started_by"`
+	MinBid    int        `db:"min_bid"`
+	Status    string     `db:"status"` // "open", "closed", "canceled"
+	WinnerID  *string    `db:"winner_id"`
+	WinAmount *int       `db:"win_amount"`
+	CreatedAt time.Time  `db:"created_at"`
 	ClosedAt  *time.Time `db:"closed_at"`
 }
 
