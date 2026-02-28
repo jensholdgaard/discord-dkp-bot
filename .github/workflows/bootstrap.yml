@@ -22,9 +22,9 @@ on:
         required: false
         default: "1"
       machine_type:
-        description: "Hetzner machine type (cpx31, cpx21, etc.)"
+        description: "Hetzner machine type (cx21, cpx21, etc.)"
         required: false
-        default: "cpx31"
+        default: "cx21"
       kubernetes_version:
         description: "Kubernetes version"
         required: false
