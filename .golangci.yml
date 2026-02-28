@@ -18,9 +18,11 @@ linters:
     - noctx
     - gosec
     - prealloc
-    - shadow
 
 linters-settings:
+  govet:
+    enable:
+      - shadow
   goimports:
     local-prefixes: github.com/jensholdgaard/discord-dkp-bot
   misspell:
