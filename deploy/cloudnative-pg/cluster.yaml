@@ -21,7 +21,10 @@ metadata:
     app.kubernetes.io/part-of: dkpbot
 ---
 # S3 credentials for backup to Hetzner Object Storage.
-# Replace with your actual credentials or use an external secret manager.
+#
+# IMPORTANT: Replace these placeholder values with real credentials
+# before deploying, or manage this Secret via an external secret
+# manager (e.g. Sealed Secrets, SOPS, External Secrets Operator).
 apiVersion: v1
 kind: Secret
 metadata:
@@ -29,8 +32,8 @@ metadata:
   namespace: dkpbot
 type: Opaque
 stringData:
-  ACCESS_KEY_ID: "<your-hetzner-s3-access-key>"
-  ACCESS_SECRET_KEY: "<your-hetzner-s3-secret-key>"
+  ACCESS_KEY_ID: "<replace-with-hetzner-s3-access-key>"
+  ACCESS_SECRET_KEY: "<replace-with-hetzner-s3-secret-key>"
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
@@ -84,7 +87,7 @@ spec:
   backup:
     barmanObjectStore:
       destinationPath: "s3://dkpbot-backups/"
-      endpointURL: "https://fsn1.your-objectstorage.com"
+      endpointURL: "https://fsn1.your-objectstorage.com"  # REPLACE with actual Hetzner S3 endpoint
       s3Credentials:
         accessKeyId:
           name: backup-s3-credentials
