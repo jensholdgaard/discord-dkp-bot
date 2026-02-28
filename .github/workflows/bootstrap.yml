@@ -68,7 +68,7 @@ jobs:
   bootstrap:
     name: Bootstrap Hetzner Cluster
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       CLUSTER_NAME: ${{ inputs.cluster_name }}
       HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
@@ -294,9 +294,9 @@ jobs:
       # ── Step 5: Wait for workload cluster ────────────────────
       - name: "Step 5: Wait for workload cluster"
         run: |
-          echo "Waiting for workload cluster (up to 15 minutes)..."
+          echo "Waiting for workload cluster (up to 20 minutes)..."
           SECONDS=0
-          TIMEOUT=900
+          TIMEOUT=1200
           INTERVAL=30
           while (( SECONDS < TIMEOUT )); do
             # Check if cluster is ready without blocking
@@ -325,7 +325,7 @@ jobs:
             sleep "${INTERVAL}"
           done
 
-          echo "::error::Timed out after ${SECONDS}s waiting for cluster/${CLUSTER_NAME} to become Ready"
+          echo "::error::Timed out after ${SECONDS}s waiting for cluster/${CLUSTER_NAME} to become Ready (timeout: ${TIMEOUT}s)"
           exit 1
 
       # ── Step 5a: Debug diagnostics on failure ─────────────────
