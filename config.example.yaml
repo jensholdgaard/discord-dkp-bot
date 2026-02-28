@@ -21,3 +21,14 @@ telemetry:
   service_version: "0.1.0"
   otlp_endpoint: "localhost:4318"
   insecure: true
+
+# Leader election enables HA by ensuring only one replica
+# actively runs the Discord bot at a time. Requires running
+# inside a Kubernetes cluster with RBAC for Lease resources.
+leader_election:
+  enabled: false
+  lease_name: "dkpbot-leader"
+  lease_namespace: "default"
+  lease_duration: 15s
+  renew_deadline: 10s
+  retry_period: 2s

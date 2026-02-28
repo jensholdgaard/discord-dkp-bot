@@ -24,6 +24,11 @@ spec:
           args:
             - "--config"
             - "/etc/dkpbot/config.yaml"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           ports:
             - name: http
               containerPort: {{ .Values.config.server.port }}

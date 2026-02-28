@@ -19,7 +19,7 @@ help:
 
 ## setup: Install development tools and dependencies
 setup:
-	$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	$(GO) install github.com/goreleaser/goreleaser/v2@latest
 	$(GO) mod download
 	@echo "Development tools installed."
