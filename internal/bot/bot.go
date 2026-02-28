@@ -10,6 +10,7 @@ import (
 	"github.com/jensholdgaard/discord-dkp-bot/internal/bot/commands"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/config"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/dkp"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Bot wraps the Discord session and command handlers.
@@ -22,13 +23,13 @@ type Bot struct {
 }
 
 // New creates a new Bot instance.
-func New(cfg config.DiscordConfig, dkpMgr *dkp.Manager, auctionMgr *auction.Manager, logger *slog.Logger) (*Bot, error) {
+func New(cfg config.DiscordConfig, dkpMgr *dkp.Manager, auctionMgr *auction.Manager, logger *slog.Logger, tp trace.TracerProvider) (*Bot, error) {
 	session, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
 		return nil, fmt.Errorf("creating discord session: %w", err)
 	}
 
-	handlers := commands.NewHandlers(dkpMgr, auctionMgr, logger)
+	handlers := commands.NewHandlers(dkpMgr, auctionMgr, logger, tp)
 
 	return &Bot{
 		session:  session,

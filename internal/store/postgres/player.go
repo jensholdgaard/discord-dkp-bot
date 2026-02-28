@@ -3,27 +3,28 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"time"
 
+	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
 	"github.com/jmoiron/sqlx"
 )
 
 // PlayerRepo implements store.PlayerRepository with sqlx.
 type PlayerRepo struct {
-	db *sqlx.DB
+	db    *sqlx.DB
+	clock clock.Clock
 }
 
 // NewPlayerRepo returns a new PlayerRepo.
-func NewPlayerRepo(db *sqlx.DB) *PlayerRepo {
-	return &PlayerRepo{db: db}
+func NewPlayerRepo(db *sqlx.DB, clk clock.Clock) *PlayerRepo {
+	return &PlayerRepo{db: db, clock: clk}
 }
 
 func (r *PlayerRepo) Create(ctx context.Context, p *store.Player) error {
 	query := `INSERT INTO players (discord_id, character_name, dkp, created_at, updated_at)
 	           VALUES ($1, $2, $3, $4, $5)
 	           RETURNING id`
-	now := time.Now().UTC()
+	now := r.clock.Now().UTC()
 	p.CreatedAt = now
 	p.UpdatedAt = now
 	return r.db.QueryRowContext(ctx, query, p.DiscordID, p.CharacterName, p.DKP, p.CreatedAt, p.UpdatedAt).Scan(&p.ID)
@@ -59,7 +60,7 @@ func (r *PlayerRepo) List(ctx context.Context) ([]store.Player, error) {
 func (r *PlayerRepo) UpdateDKP(ctx context.Context, id string, delta int) error {
 	result, err := r.db.ExecContext(ctx,
 		`UPDATE players SET dkp = dkp + $1, updated_at = $2 WHERE id = $3`,
-		delta, time.Now().UTC(), id,
+		delta, r.clock.Now().UTC(), id,
 	)
 	if err != nil {
 		return fmt.Errorf("updating dkp: %w", err)

@@ -3,26 +3,27 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"time"
 
+	"github.com/jensholdgaard/discord-dkp-bot/internal/clock"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/store"
 	"github.com/jmoiron/sqlx"
 )
 
 // AuctionRepo implements store.AuctionRepository with sqlx.
 type AuctionRepo struct {
-	db *sqlx.DB
+	db    *sqlx.DB
+	clock clock.Clock
 }
 
 // NewAuctionRepo returns a new AuctionRepo.
-func NewAuctionRepo(db *sqlx.DB) *AuctionRepo {
-	return &AuctionRepo{db: db}
+func NewAuctionRepo(db *sqlx.DB, clk clock.Clock) *AuctionRepo {
+	return &AuctionRepo{db: db, clock: clk}
 }
 
 func (r *AuctionRepo) Create(ctx context.Context, a *store.Auction) error {
 	query := `INSERT INTO auctions (item_name, started_by, min_bid, status, created_at)
 	           VALUES ($1, $2, $3, $4, $5) RETURNING id`
-	a.CreatedAt = time.Now().UTC()
+	a.CreatedAt = r.clock.Now().UTC()
 	a.Status = "open"
 	return r.db.QueryRowContext(ctx, query, a.ItemName, a.StartedBy, a.MinBid, a.Status, a.CreatedAt).Scan(&a.ID)
 }
@@ -37,7 +38,7 @@ func (r *AuctionRepo) GetByID(ctx context.Context, id string) (*store.Auction, e
 }
 
 func (r *AuctionRepo) Close(ctx context.Context, id string, winnerID string, amount int) error {
-	now := time.Now().UTC()
+	now := r.clock.Now().UTC()
 	result, err := r.db.ExecContext(ctx,
 		`UPDATE auctions SET status = 'closed', winner_id = $1, win_amount = $2, closed_at = $3
 		 WHERE id = $4 AND status = 'open'`,
@@ -54,7 +55,7 @@ func (r *AuctionRepo) Close(ctx context.Context, id string, winnerID string, amo
 }
 
 func (r *AuctionRepo) Cancel(ctx context.Context, id string) error {
-	now := time.Now().UTC()
+	now := r.clock.Now().UTC()
 	result, err := r.db.ExecContext(ctx,
 		`UPDATE auctions SET status = 'cancelled', closed_at = $1 WHERE id = $2 AND status = 'open'`,
 		now, id,

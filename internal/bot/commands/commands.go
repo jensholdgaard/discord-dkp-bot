@@ -9,26 +9,25 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/auction"
 	"github.com/jensholdgaard/discord-dkp-bot/internal/dkp"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
-
-var tracer = otel.Tracer("github.com/jensholdgaard/discord-dkp-bot/internal/bot/commands")
 
 // Handlers process Discord interactions.
 type Handlers struct {
 	dkpMgr     *dkp.Manager
 	auctionMgr *auction.Manager
 	logger     *slog.Logger
+	tracer     trace.Tracer
 }
 
 // NewHandlers creates new command handlers.
-func NewHandlers(dkpMgr *dkp.Manager, auctionMgr *auction.Manager, logger *slog.Logger) *Handlers {
+func NewHandlers(dkpMgr *dkp.Manager, auctionMgr *auction.Manager, logger *slog.Logger, tp trace.TracerProvider) *Handlers {
 	return &Handlers{
 		dkpMgr:     dkpMgr,
 		auctionMgr: auctionMgr,
 		logger:     logger,
+		tracer:     tp.Tracer("github.com/jensholdgaard/discord-dkp-bot/internal/bot/commands"),
 	}
 }
 
@@ -162,7 +161,7 @@ func SlashCommands() []*discordgo.ApplicationCommand {
 
 // InteractionCreate handles incoming slash command interactions.
 func (h *Handlers) InteractionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	ctx, span := tracer.Start(context.Background(), "InteractionCreate",
+	ctx, span := h.tracer.Start(context.Background(), "InteractionCreate",
 		trace.WithAttributes(attribute.String("command", i.ApplicationCommandData().Name)),
 	)
 	defer span.End()
