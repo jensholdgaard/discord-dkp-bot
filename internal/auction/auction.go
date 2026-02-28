@@ -226,7 +226,7 @@ func Replay(events []event.Event) (*Auction, error) {
 		case event.AuctionStarted:
 			var d event.AuctionStartedData
 			if err := json.Unmarshal(e.Data, &d); err != nil {
-				return nil, fmt.Errorf("unmarshalling started event: %w", err)
+				return nil, fmt.Errorf("unmarshaling started event: %w", err)
 			}
 			a.ID = e.AggregateID
 			a.ItemName = d.ItemName
@@ -237,7 +237,7 @@ func Replay(events []event.Event) (*Auction, error) {
 		case event.AuctionBidPlaced:
 			var d event.BidPlacedData
 			if err := json.Unmarshal(e.Data, &d); err != nil {
-				return nil, fmt.Errorf("unmarshalling bid event: %w", err)
+				return nil, fmt.Errorf("unmarshaling bid event: %w", err)
 			}
 			a.Bids = append(a.Bids, Bid{
 				PlayerID: d.PlayerID,
