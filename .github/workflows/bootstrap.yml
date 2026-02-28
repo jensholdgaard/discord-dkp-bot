@@ -14,13 +14,13 @@ on:
         required: false
         default: "nbg1"
       control_plane_count:
-        description: "Number of control-plane nodes"
+        description: "Number of control-plane nodes (keep low for Hetzner limits)"
         required: false
-        default: "3"
+        default: "1"
       worker_count:
-        description: "Number of worker nodes"
+        description: "Number of worker nodes (keep low for Hetzner limits)"
         required: false
-        default: "2"
+        default: "1"
       machine_type:
         description: "Hetzner machine type (cpx21, cpx31, etc.)"
         required: false
@@ -164,12 +164,45 @@ jobs:
             --from-literal=hcloud="${HCLOUD_TOKEN}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
+      # ── Step 3a: Pre-flight Hetzner limit check ──────────────
+      - name: "Step 3a: Pre-flight Hetzner limit check"
+        run: |
+          NEEDED=$(( CONTROL_PLANE_MACHINE_COUNT + WORKER_MACHINE_COUNT ))
+          echo "Requesting ${NEEDED} server(s): ${CONTROL_PLANE_MACHINE_COUNT} control-plane + ${WORKER_MACHINE_COUNT} worker(s)"
+
+          # Query existing servers in this project
+          RESP=$(curl -sf -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
+            "https://api.hetzner.cloud/v1/servers?per_page=50" 2>&1) || {
+            echo "::warning::Could not query Hetzner API. Continuing anyway."
+            exit 0
+          }
+
+          CURRENT=$(echo "${RESP}" | jq '.servers | length')
+          echo "Currently running servers: ${CURRENT}"
+
+          if [[ "${CURRENT}" -gt 0 ]]; then
+            echo "::warning::You have ${CURRENT} existing server(s) on this Hetzner project."
+            echo "::warning::If provisioning fails, you may have hit Hetzner server/vCPU limits."
+            echo "::warning::Delete unused servers or request a limit increase at https://console.hetzner.cloud"
+            echo "Existing servers:"
+            echo "${RESP}" | jq -r '.servers[] | "  - \(.name) (\(.server_type.name), \(.status))"'
+          fi
+
+          echo "Will attempt to create ${NEEDED} additional server(s)."
+
       # ── Step 4: Apply cluster manifests ──────────────────────
       - name: "Step 4: Apply cluster manifests"
         run: |
+          # Template replica counts from workflow inputs into manifests
+          sed "s/replicas: 3/replicas: ${CONTROL_PLANE_MACHINE_COUNT}/" \
+            deploy/infrastructure/control-plane.yaml > /tmp/control-plane.yaml
+
+          sed "s/replicas: 2/replicas: ${WORKER_MACHINE_COUNT}/" \
+            deploy/infrastructure/workers.yaml > /tmp/workers.yaml
+
           kubectl apply -f deploy/infrastructure/cluster.yaml
-          kubectl apply -f deploy/infrastructure/control-plane.yaml
-          kubectl apply -f deploy/infrastructure/workers.yaml
+          kubectl apply -f /tmp/control-plane.yaml
+          kubectl apply -f /tmp/workers.yaml
 
       # ── Step 4a: Start background provisioning logger ────────
       - name: "Step 4a: Start provisioning debug logger"

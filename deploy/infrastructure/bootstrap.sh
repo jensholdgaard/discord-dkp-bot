@@ -84,9 +84,15 @@ kubectl create secret generic hetzner \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "==> Step 4: Apply cluster manifests"
+# Template replica counts from environment variables
+sed "s/replicas: 3/replicas: ${CONTROL_PLANE_MACHINE_COUNT:-1}/" \
+  "${SCRIPT_DIR}/control-plane.yaml" > /tmp/control-plane.yaml
+sed "s/replicas: 2/replicas: ${WORKER_MACHINE_COUNT:-1}/" \
+  "${SCRIPT_DIR}/workers.yaml" > /tmp/workers.yaml
+
 kubectl apply -f "${SCRIPT_DIR}/cluster.yaml"
-kubectl apply -f "${SCRIPT_DIR}/control-plane.yaml"
-kubectl apply -f "${SCRIPT_DIR}/workers.yaml"
+kubectl apply -f /tmp/control-plane.yaml
+kubectl apply -f /tmp/workers.yaml
 
 echo "==> Step 5: Wait for workload cluster to be provisioned"
 echo "    This may take 5-10 minutes..."
