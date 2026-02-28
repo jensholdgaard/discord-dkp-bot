@@ -203,3 +203,87 @@ func TestManager_DeductDKP(t *testing.T) {
 		t.Errorf("DKP = %d, want 70", p.DKP)
 	}
 }
+
+func TestManager_GetPlayer(t *testing.T) {
+	repo := newMockPlayerRepo()
+	es := &mockEventStore{}
+	logger := slog.Default()
+	mgr := dkp.NewManager(repo, es, logger, testTP)
+
+	_, _ = mgr.RegisterPlayer(context.Background(), "d-get", "Frodo")
+
+	p, err := mgr.GetPlayer(context.Background(), "d-get")
+	if err != nil {
+		t.Fatalf("GetPlayer() error = %v", err)
+	}
+	if p.CharacterName != "Frodo" {
+		t.Errorf("CharacterName = %q, want %q", p.CharacterName, "Frodo")
+	}
+}
+
+func TestManager_GetPlayer_NotFound(t *testing.T) {
+	repo := newMockPlayerRepo()
+	es := &mockEventStore{}
+	logger := slog.Default()
+	mgr := dkp.NewManager(repo, es, logger, testTP)
+
+	_, err := mgr.GetPlayer(context.Background(), "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent player")
+	}
+}
+
+func TestManager_ListPlayers(t *testing.T) {
+	repo := newMockPlayerRepo()
+	es := &mockEventStore{}
+	logger := slog.Default()
+	mgr := dkp.NewManager(repo, es, logger, testTP)
+
+	_, _ = mgr.RegisterPlayer(context.Background(), "d1", "Sam")
+	_, _ = mgr.RegisterPlayer(context.Background(), "d2", "Pippin")
+
+	players, err := mgr.ListPlayers(context.Background())
+	if err != nil {
+		t.Fatalf("ListPlayers() error = %v", err)
+	}
+	if len(players) != 2 {
+		t.Errorf("players count = %d, want 2", len(players))
+	}
+}
+
+func TestManager_RegisterPlayer_RepoError(t *testing.T) {
+	repo := newMockPlayerRepo()
+	repo.err = fmt.Errorf("db error")
+	es := &mockEventStore{}
+	logger := slog.Default()
+	mgr := dkp.NewManager(repo, es, logger, testTP)
+
+	_, err := mgr.RegisterPlayer(context.Background(), "d1", "Boromir")
+	if err == nil {
+		t.Fatal("expected error when repo returns error")
+	}
+}
+
+func TestManager_AwardDKP_PlayerNotFound(t *testing.T) {
+	repo := newMockPlayerRepo()
+	es := &mockEventStore{}
+	logger := slog.Default()
+	mgr := dkp.NewManager(repo, es, logger, testTP)
+
+	err := mgr.AwardDKP(context.Background(), "nonexistent-id", 50, "test")
+	if err == nil {
+		t.Fatal("expected error when player not found")
+	}
+}
+
+func TestManager_DeductDKP_PlayerNotFound(t *testing.T) {
+	repo := newMockPlayerRepo()
+	es := &mockEventStore{}
+	logger := slog.Default()
+	mgr := dkp.NewManager(repo, es, logger, testTP)
+
+	err := mgr.DeductDKP(context.Background(), "nonexistent-id", 30, "test")
+	if err == nil {
+		t.Fatal("expected error when player not found")
+	}
+}
