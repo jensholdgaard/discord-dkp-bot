@@ -173,19 +173,64 @@ See [`deploy/flux/`](../deploy/flux/) for:
 
 ### 4.4 Secrets Management
 
-Sensitive values (Discord token, S3 credentials) are **not** stored in Git.
-They are created as Kubernetes Secrets on the cluster:
+Sensitive values are **not** stored in Git. They are injected into the
+cluster during bootstrap via GitHub repository secrets.
+
+#### GitHub Repository Secrets
+
+Configure these in **Settings → Secrets and variables → Actions**:
+
+| Secret Name            | Required | Description                                      |
+|------------------------|----------|--------------------------------------------------|
+| `HCLOUD_TOKEN`         | **Yes**  | Hetzner Cloud API token                          |
+| `CNPG_S3_ACCESS_KEY`   | **Yes**  | Hetzner Object Storage access key ID (for CNPG backups) |
+| `CNPG_S3_SECRET_KEY`   | **Yes**  | Hetzner Object Storage secret access key         |
+| `DISCORD_TOKEN`        | **Yes**  | Discord bot token                                |
+| `DISCORD_GUILD_ID`     | **Yes**  | Discord guild (server) ID                        |
+| `HCLOUD_SSH_KEY`       | No       | SSH key name in Hetzner console (default: `dkpbot-ssh`) |
+
+#### How Secrets Flow
+
+```
+GitHub repo secrets
+        │
+        ▼
+Bootstrap workflow (.github/workflows/bootstrap.yml)
+        │
+        ├─► kubectl create secret "backup-s3-credentials"   (namespace: dkpbot)
+        │     └── ACCESS_KEY_ID      ← CNPG_S3_ACCESS_KEY
+        │     └── ACCESS_SECRET_KEY  ← CNPG_S3_SECRET_KEY
+        │
+        ├─► kubectl create secret "dkpbot-secrets"          (namespace: flux-system)
+        │     └── config.discord.token    ← DISCORD_TOKEN
+        │     └── config.discord.guild_id ← DISCORD_GUILD_ID
+        │
+        └─► kubectl create secret "hetzner"                 (namespace: kube-system)
+              └── token ← HCLOUD_TOKEN
+```
+
+The `backup-s3-credentials` Secret is referenced by the CNPG Cluster
+resource (`deploy/cloudnative-pg/cluster.yaml`) for WAL archiving and
+base backups to Hetzner Object Storage.
+
+#### Getting Hetzner S3 Credentials
+
+1. Log in to [Hetzner Cloud Console](https://console.hetzner.cloud)
+2. Go to **Object Storage** in the left sidebar
+3. Create a bucket (e.g. `dkpbot-backups`) if you haven't already
+4. Click **S3 Credentials** → **Generate credentials**
+5. Copy the **Access Key** and **Secret Key**
+6. Add them as `CNPG_S3_ACCESS_KEY` and `CNPG_S3_SECRET_KEY` in your
+   GitHub repository secrets
+
+#### Manual Secret Creation (alternative)
+
+If you prefer not to use the workflow, create the Secret manually:
 
 ```bash
-# Discord bot credentials
-kubectl -n flux-system create secret generic dkpbot-secrets \
-  --from-literal=config.discord.token=YOUR_TOKEN \
-  --from-literal=config.discord.guild_id=YOUR_GUILD_ID
-
-# S3 backup credentials (in dkpbot namespace)
 kubectl -n dkpbot create secret generic backup-s3-credentials \
-  --from-literal=ACCESS_KEY_ID=YOUR_KEY \
-  --from-literal=ACCESS_SECRET_KEY=YOUR_SECRET
+  --from-literal=ACCESS_KEY_ID=<your-access-key> \
+  --from-literal=ACCESS_SECRET_KEY=<your-secret-key>
 ```
 
 For a fully GitOps approach, consider adding Mozilla SOPS or Sealed
@@ -353,14 +398,16 @@ telemetry:
 
 1. Review and approve this plan.
 2. Create Hetzner Cloud project and generate API token.
-3. Create GitHub PAT with `repo` scope for FluxCD.
-4. Add secrets to the GitHub repository:
+3. Create Hetzner Object Storage bucket and S3 credentials (see §4.4).
+4. Create GitHub PAT with `repo` scope for FluxCD.
+5. Add **all required secrets** to the GitHub repository (see §4.4):
    - `HCLOUD_TOKEN` — Hetzner Cloud API token
+   - `CNPG_S3_ACCESS_KEY` — Hetzner S3 access key
+   - `CNPG_S3_SECRET_KEY` — Hetzner S3 secret key
    - `DISCORD_TOKEN` — Discord bot token
    - `DISCORD_GUILD_ID` — Discord guild ID
-5. Run the **Bootstrap Infrastructure** workflow from the Actions tab
+6. Run the **Bootstrap Infrastructure** workflow from the Actions tab
    (or run `deploy/infrastructure/bootstrap.sh` locally).
-6. Flux auto-deploys database, observability, and bot from Git.
-7. Download the kubeconfig artifact from the workflow run.
-8. Update `backup-s3-credentials` in the `dkpbot` namespace with Hetzner S3 keys.
+7. Flux auto-deploys database, observability, and bot from Git.
+8. Download the kubeconfig artifact from the workflow run.
 9. Begin data migration from MongoDB.

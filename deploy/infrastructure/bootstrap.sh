@@ -135,6 +135,22 @@ kubectl -n flux-system create secret generic dkpbot-secrets \
   --from-literal=config.discord.guild_id="REPLACE_ME" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+echo "    Creating CNPG S3 backup credentials..."
+kubectl create namespace dkpbot --dry-run=client -o yaml | kubectl apply -f -
+if [[ -n "${CNPG_S3_ACCESS_KEY:-}" && -n "${CNPG_S3_SECRET_KEY:-}" ]]; then
+  kubectl -n dkpbot create secret generic backup-s3-credentials \
+    --from-literal=ACCESS_KEY_ID="${CNPG_S3_ACCESS_KEY}" \
+    --from-literal=ACCESS_SECRET_KEY="${CNPG_S3_SECRET_KEY}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  echo "    ✅ backup-s3-credentials Secret created."
+else
+  echo "    ⚠  CNPG_S3_ACCESS_KEY / CNPG_S3_SECRET_KEY not set in .env."
+  echo "    CNPG backups will not work until you create the Secret manually:"
+  echo "      kubectl -n dkpbot create secret generic backup-s3-credentials \\"
+  echo "        --from-literal=ACCESS_KEY_ID=<your-key> \\"
+  echo "        --from-literal=ACCESS_SECRET_KEY=<your-secret>"
+fi
+
 echo "==> Step 11: Clean up local Kind cluster"
 unset KUBECONFIG
 kind delete cluster --name "${KIND_CLUSTER}"
@@ -153,5 +169,12 @@ echo ""
 echo "⚠  Update the dkpbot-secrets Secret with real Discord credentials:"
 echo "  kubectl -n flux-system edit secret dkpbot-secrets"
 echo ""
-echo "⚠  Update backup-s3-credentials in the dkpbot namespace with real"
-echo "  Hetzner Object Storage credentials for CNPG backups."
+if [[ -z "${CNPG_S3_ACCESS_KEY:-}" || -z "${CNPG_S3_SECRET_KEY:-}" ]]; then
+  echo "⚠  Create backup-s3-credentials in the dkpbot namespace with real"
+  echo "  Hetzner Object Storage credentials for CNPG backups:"
+  echo "    kubectl -n dkpbot create secret generic backup-s3-credentials \\"
+  echo "      --from-literal=ACCESS_KEY_ID=<your-key> \\"
+  echo "      --from-literal=ACCESS_SECRET_KEY=<your-secret>"
+else
+  echo "✅ CNPG S3 backup credentials configured."
+fi

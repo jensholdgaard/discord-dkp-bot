@@ -36,12 +36,25 @@ on:
         description: "Discord guild ID (leave empty to use repo secret DISCORD_GUILD_ID)"
         required: false
         default: ""
+      cnpg_s3_endpoint:
+        description: "Hetzner S3 endpoint URL (e.g. https://fsn1.your-objectstorage.com)"
+        required: false
+        default: ""
+      cnpg_s3_bucket:
+        description: "S3 bucket name for CNPG backups"
+        required: false
+        default: "dkpbot-backups"
 
-# Secrets required (configure in Settings → Secrets and variables → Actions):
-#   HCLOUD_TOKEN       — Hetzner Cloud API token
-#   HCLOUD_SSH_KEY     — (optional) SSH key name in Hetzner console, defaults to "dkpbot-ssh"
-#   DISCORD_TOKEN      — Discord bot token (alternative to input)
-#   DISCORD_GUILD_ID   — Discord guild ID (alternative to input)
+# Required GitHub repository secrets (Settings → Secrets and variables → Actions):
+#
+#   HCLOUD_TOKEN         — Hetzner Cloud API token
+#   CNPG_S3_ACCESS_KEY   — Hetzner Object Storage access key ID
+#   CNPG_S3_SECRET_KEY   — Hetzner Object Storage secret access key
+#
+# Optional secrets:
+#   HCLOUD_SSH_KEY       — SSH key name in Hetzner console (defaults to "dkpbot-ssh")
+#   DISCORD_TOKEN        — Discord bot token (can also be passed as workflow input)
+#   DISCORD_GUILD_ID     — Discord guild ID (can also be passed as workflow input)
 
 permissions:
   contents: write    # Flux bootstrap commits to the repo
@@ -71,6 +84,12 @@ jobs:
           if [[ -z "${HCLOUD_TOKEN}" ]]; then
             echo "::error::HCLOUD_TOKEN secret is not set. Configure it in Settings → Secrets."
             exit 1
+          fi
+          if [[ -z "${{ secrets.CNPG_S3_ACCESS_KEY }}" ]]; then
+            echo "::warning::CNPG_S3_ACCESS_KEY secret is not set. CNPG backups will not work until you create the backup-s3-credentials Secret manually."
+          fi
+          if [[ -z "${{ secrets.CNPG_S3_SECRET_KEY }}" ]]; then
+            echo "::warning::CNPG_S3_SECRET_KEY secret is not set. CNPG backups will not work until you create the backup-s3-credentials Secret manually."
           fi
 
       - uses: actions/checkout@v4
@@ -199,8 +218,34 @@ jobs:
           kubectl apply -f deploy/flux/kustomizations/helm-values-configmaps.yaml
           kubectl apply -f deploy/flux/kustomizations/
 
-      # ── Step 12: Create DKP bot secrets ────────────────────
-      - name: "Step 12: Create DKP bot secrets"
+      # ── Step 12: Create CNPG backup S3 credentials ─────────
+      # The backup-s3-credentials Secret must exist in the dkpbot
+      # namespace BEFORE the CNPG Cluster resource is reconciled.
+      # It is referenced by deploy/cloudnative-pg/cluster.yaml.
+      - name: "Step 12: Create CNPG S3 backup credentials"
+        run: |
+          S3_ACCESS="${{ secrets.CNPG_S3_ACCESS_KEY }}"
+          S3_SECRET="${{ secrets.CNPG_S3_SECRET_KEY }}"
+
+          # Ensure the namespace exists (Flux may not have created it yet)
+          kubectl create namespace dkpbot --dry-run=client -o yaml | kubectl apply -f -
+
+          if [[ -n "${S3_ACCESS}" && -n "${S3_SECRET}" ]]; then
+            kubectl -n dkpbot create secret generic backup-s3-credentials \
+              --from-literal=ACCESS_KEY_ID="${S3_ACCESS}" \
+              --from-literal=ACCESS_SECRET_KEY="${S3_SECRET}" \
+              --dry-run=client -o yaml | kubectl apply -f -
+            echo "✅ backup-s3-credentials Secret created in dkpbot namespace."
+          else
+            echo "::warning::CNPG_S3_ACCESS_KEY and/or CNPG_S3_SECRET_KEY secrets are not set."
+            echo "::warning::CNPG backups will NOT work. Create the Secret manually after bootstrap:"
+            echo "::warning::  kubectl -n dkpbot create secret generic backup-s3-credentials \\"
+            echo "::warning::    --from-literal=ACCESS_KEY_ID=<your-key> \\"
+            echo "::warning::    --from-literal=ACCESS_SECRET_KEY=<your-secret>"
+          fi
+
+      # ── Step 13: Create DKP bot secrets ────────────────────
+      - name: "Step 13: Create DKP bot secrets"
         run: |
           DISCORD_TOK="${{ inputs.discord_token }}"
           DISCORD_GID="${{ inputs.discord_guild_id }}"
@@ -226,14 +271,14 @@ jobs:
             --from-literal=config.discord.guild_id="${DISCORD_GID}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      # ── Step 13: Clean up Kind ─────────────────────────────
-      - name: "Step 13: Delete Kind management cluster"
+      # ── Step 14: Clean up Kind ─────────────────────────────
+      - name: "Step 14: Delete Kind management cluster"
         if: always()
         run: |
           kind delete cluster --name capi-management || true
 
-      # ── Step 14: Upload kubeconfig as artifact ─────────────
-      - name: "Step 14: Upload kubeconfig"
+      # ── Step 15: Upload kubeconfig as artifact ─────────────
+      - name: "Step 15: Upload kubeconfig"
         if: success()
         uses: actions/upload-artifact@v4
         with:
@@ -257,9 +302,25 @@ jobs:
           echo "- Observability stack (Prometheus, Grafana, Loki, Tempo)" >> "$GITHUB_STEP_SUMMARY"
           echo "- DKP bot (HelmRelease)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Secrets status" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "${{ secrets.CNPG_S3_ACCESS_KEY }}" && -n "${{ secrets.CNPG_S3_SECRET_KEY }}" ]]; then
+            echo "- ✅ \`backup-s3-credentials\` — CNPG S3 backups configured" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- ⚠️ \`backup-s3-credentials\` — **not configured**. Add \`CNPG_S3_ACCESS_KEY\` and \`CNPG_S3_SECRET_KEY\` repo secrets and re-run, or create manually:" >> "$GITHUB_STEP_SUMMARY"
+            echo '  ```' >> "$GITHUB_STEP_SUMMARY"
+            echo '  kubectl -n dkpbot create secret generic backup-s3-credentials \' >> "$GITHUB_STEP_SUMMARY"
+            echo '    --from-literal=ACCESS_KEY_ID=<key> \' >> "$GITHUB_STEP_SUMMARY"
+            echo '    --from-literal=ACCESS_SECRET_KEY=<secret>' >> "$GITHUB_STEP_SUMMARY"
+            echo '  ```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ -n "${{ secrets.DISCORD_TOKEN }}" || -n "${{ inputs.discord_token }}" ]]; then
+            echo "- ✅ \`dkpbot-secrets\` — Discord credentials configured" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- ⚠️ \`dkpbot-secrets\` — **not configured**. Add \`DISCORD_TOKEN\` and \`DISCORD_GUILD_ID\` repo secrets and re-run" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Next steps" >> "$GITHUB_STEP_SUMMARY"
           echo "1. Download the kubeconfig artifact from this run" >> "$GITHUB_STEP_SUMMARY"
-          echo "2. Update \`dkpbot-secrets\` with real Discord credentials if not provided" >> "$GITHUB_STEP_SUMMARY"
-          echo "3. Update \`backup-s3-credentials\` in the \`dkpbot\` namespace with Hetzner S3 keys" >> "$GITHUB_STEP_SUMMARY"
+          echo "2. Check the secrets status above — fix any ⚠️ items" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "⚠️ The kubeconfig artifact expires in 1 day — save it securely." >> "$GITHUB_STEP_SUMMARY"
