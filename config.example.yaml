@@ -1,0 +1,23 @@
+# Discord DKP Bot Configuration
+discord:
+  token: "your-discord-bot-token"
+  guild_id: "your-guild-id"
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "dkpbot"
+  password: "changeme"
+  dbname: "dkpbot"
+  sslmode: "disable"
+  driver: "sqlx"  # "sqlx" or "ent"
+
+server:
+  port: 8080
+  shutdown_timeout: 15s
+
+telemetry:
+  service_name: "dkpbot"
+  service_version: "0.1.0"
+  otlp_endpoint: "localhost:4318"
+  insecure: true
