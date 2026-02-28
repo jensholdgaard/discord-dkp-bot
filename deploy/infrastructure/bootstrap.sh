@@ -45,6 +45,21 @@ KIND_CLUSTER="capi-management"
 : "${GITHUB_TOKEN:?Set GITHUB_TOKEN in .env (needed for Flux bootstrap)}"
 : "${GITHUB_USER:?Set GITHUB_USER in .env (GitHub owner for Flux)}"
 
+# ─── Validate Hetzner API token ─────────────────────────────────
+echo "==> Pre-flight: Validating HCLOUD_TOKEN..."
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
+  "https://api.hetzner.cloud/v1/locations?per_page=1") || true
+if [[ "${HTTP_CODE}" == "401" || "${HTTP_CODE}" == "403" ]]; then
+  echo "ERROR: HCLOUD_TOKEN is invalid (HTTP ${HTTP_CODE}). Check your Hetzner Cloud API token."
+  exit 1
+fi
+if [[ "${HTTP_CODE}" == "200" ]]; then
+  echo "    ✅ HCLOUD_TOKEN is valid."
+else
+  echo "    ⚠  Could not validate HCLOUD_TOKEN (HTTP ${HTTP_CODE}). Continuing anyway."
+fi
+
 echo "==> Step 1: Create local Kind management cluster"
 if kind get clusters 2>/dev/null | grep -q "^${KIND_CLUSTER}$"; then
   echo "    Kind cluster '${KIND_CLUSTER}' already exists, reusing."
