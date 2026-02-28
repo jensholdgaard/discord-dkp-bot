@@ -107,7 +107,10 @@ spec:
       name: tempo-values
       valuesKey: values.yaml
 ---
-# ── OTel Collector (raw manifests from repo) ───────────────────
+# ── OTel Collector + namespace (raw manifests from repo) ───────
+# Only namespace.yaml and otel-collector.yaml are valid K8s
+# manifests; the Helm values files are consumed by the
+# HelmReleases above via ConfigMaps.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -118,15 +121,5 @@ spec:
   sourceRef:
     kind: GitRepository
     name: discord-dkp-bot
-  path: ./deploy/observability
+  path: ./deploy/observability/manifests
   prune: true
-  # Only apply namespace.yaml and otel-collector.yaml (Helm handles the rest)
-  patches:
-    - target:
-        kind: ConfigMap
-      patch: |
-        $patch: delete
-        apiVersion: v1
-        kind: ConfigMap
-        metadata:
-          name: unused

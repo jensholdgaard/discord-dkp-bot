@@ -217,6 +217,10 @@ jobs:
           DISCORD_TOK="${DISCORD_TOK:-REPLACE_ME}"
           DISCORD_GID="${DISCORD_GID:-REPLACE_ME}"
 
+          if [[ "${DISCORD_TOK}" == "REPLACE_ME" || "${DISCORD_GID}" == "REPLACE_ME" ]]; then
+            echo "::warning::Discord credentials not provided. The bot will not start until you update the dkpbot-secrets Secret with real values."
+          fi
+
           kubectl -n flux-system create secret generic dkpbot-secrets \
             --from-literal=config.discord.token="${DISCORD_TOK}" \
             --from-literal=config.discord.guild_id="${DISCORD_GID}" \

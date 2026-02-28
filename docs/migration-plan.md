@@ -253,12 +253,12 @@ The Helm chart is updated to mount this Secret instead of inline credentials.
 
 See [`deploy/observability/`](../deploy/observability/) for:
 
-- `namespace.yaml` — `observability` namespace
+- `manifests/namespace.yaml` — `observability` namespace
+- `manifests/otel-collector.yaml` — OTel Collector DaemonSet
 - `kube-prometheus-stack-values.yaml` — Helm values for Prometheus + Grafana
 - `loki-values.yaml` — Helm values for Grafana Loki
 - `tempo-values.yaml` — Helm values for Grafana Tempo
-- `otel-collector.yaml` — OTel Collector DaemonSet
-- `install.sh` — Script to install all components via Helm
+- `install.sh` — Script to install all components via Helm (manual fallback)
 
 ### 7.3 Integration
 
