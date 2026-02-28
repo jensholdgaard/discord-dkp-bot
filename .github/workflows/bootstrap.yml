@@ -9,9 +9,9 @@ on:
         required: false
         default: "dkpbot-prod"
       hcloud_region:
-        description: "Hetzner Cloud region (fsn1, nbg1, hel1)"
+        description: "Hetzner Cloud region (nbg1, fsn1, hel1)"
         required: false
-        default: "fsn1"
+        default: "nbg1"
       control_plane_count:
         description: "Number of control-plane nodes"
         required: false
@@ -37,7 +37,7 @@ on:
         required: false
         default: ""
       cnpg_s3_endpoint:
-        description: "Hetzner S3 endpoint URL (e.g. https://fsn1.your-objectstorage.com)"
+        description: "Hetzner S3 endpoint URL (e.g. https://nbg1.your-objectstorage.com)"
         required: false
         default: ""
       cnpg_s3_bucket:
