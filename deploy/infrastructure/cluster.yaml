@@ -51,8 +51,6 @@ spec:
     region: nbg1
     type: lb11
     port: 6443
-    algorithm:
-      type: round_robin
   hetznerSecretRef:
     name: hetzner
     key:
