@@ -8,3 +8,14 @@ error.log
 generate_statistics.js
 dkp_statistics.json
 dkpbot
+
+# Go
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+coverage.out
+coverage.html
