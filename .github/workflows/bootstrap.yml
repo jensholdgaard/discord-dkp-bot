@@ -44,6 +44,10 @@ on:
         description: "S3 bucket name for CNPG backups"
         required: false
         default: "dkpbot-backups"
+      flux_branch:
+        description: "Git branch for FluxCD to track (defaults to the branch you dispatch from)"
+        required: false
+        default: ""
 
 # Required GitHub repository secrets (Settings → Secrets and variables → Actions):
 #
@@ -204,10 +208,16 @@ jobs:
       # ── Step 10: Bootstrap FluxCD ──────────────────────────
       - name: "Step 10: Bootstrap FluxCD"
         run: |
+          # Use the input if provided, otherwise use the branch this workflow was dispatched from
+          FLUX_BRANCH="${{ inputs.flux_branch }}"
+          FLUX_BRANCH="${FLUX_BRANCH:-${{ github.ref_name }}}"
+
+          echo "FluxCD will track branch: ${FLUX_BRANCH}"
+
           flux bootstrap github \
             --owner="${GITHUB_USER}" \
             --repository="${{ github.event.repository.name }}" \
-            --branch=main \
+            --branch="${FLUX_BRANCH}" \
             --path=deploy/flux \
             --personal \
             --token-auth
@@ -290,10 +300,14 @@ jobs:
       - name: Summary
         if: success()
         run: |
+          FLUX_BRANCH="${{ inputs.flux_branch }}"
+          FLUX_BRANCH="${FLUX_BRANCH:-${{ github.ref_name }}}"
+
           echo "## ✅ Cluster \`${CLUSTER_NAME}\` bootstrapped!" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Region:** ${HCLOUD_REGION}" >> "$GITHUB_STEP_SUMMARY"
           echo "**Kubernetes:** ${KUBERNETES_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**FluxCD branch:** \`${FLUX_BRANCH}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "**Control Plane:** ${CONTROL_PLANE_MACHINE_COUNT}× ${HCLOUD_CONTROL_PLANE_MACHINE_TYPE}" >> "$GITHUB_STEP_SUMMARY"
           echo "**Workers:** ${WORKER_MACHINE_COUNT}× ${HCLOUD_WORKER_MACHINE_TYPE}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -322,5 +336,8 @@ jobs:
           echo "### Next steps" >> "$GITHUB_STEP_SUMMARY"
           echo "1. Download the kubeconfig artifact from this run" >> "$GITHUB_STEP_SUMMARY"
           echo "2. Check the secrets status above — fix any ⚠️ items" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${FLUX_BRANCH}" != "main" ]]; then
+            echo "3. ⚠️ Flux is tracking branch \`${FLUX_BRANCH}\`, not \`main\`. After testing, re-run the workflow from \`main\` or update the Flux GitRepository to point to \`main\`." >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "⚠️ The kubeconfig artifact expires in 1 day — save it securely." >> "$GITHUB_STEP_SUMMARY"
