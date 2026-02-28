@@ -7,7 +7,7 @@
 
 grafana:
   enabled: true
-  adminPassword: "changeme"  # Change in production or use a Secret
+  adminPassword: "changeme"  # IMPORTANT: Change in production or use a Kubernetes Secret
   persistence:
     enabled: true
     size: 5Gi

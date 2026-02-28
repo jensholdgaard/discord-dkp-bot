@@ -1,0 +1,132 @@
+# Flux Kustomization — Observability Stack
+#
+# Installs Prometheus, Grafana, Loki, Tempo, and the OTel Collector.
+# Uses HelmReleases for Helm-based components and a Kustomization
+# for the raw OTel Collector manifests.
+---
+# ── Helm Repositories ──────────────────────────────────────────
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: prometheus-community
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://prometheus-community.github.io/helm-charts
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: grafana
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://grafana.github.io/helm-charts
+---
+# ── kube-prometheus-stack (Prometheus + Grafana + Alertmanager) ─
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: flux-system
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: "72.*"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+  targetNamespace: observability
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  valuesFrom:
+    - kind: ConfigMap
+      name: kube-prometheus-stack-values
+      valuesKey: values.yaml
+---
+# ── Grafana Loki ───────────────────────────────────────────────
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: loki
+  namespace: flux-system
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: loki
+      version: "6.*"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+  targetNamespace: observability
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  valuesFrom:
+    - kind: ConfigMap
+      name: loki-values
+      valuesKey: values.yaml
+---
+# ── Grafana Tempo ──────────────────────────────────────────────
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tempo
+  namespace: flux-system
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: tempo
+      version: "1.*"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+  targetNamespace: observability
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  valuesFrom:
+    - kind: ConfigMap
+      name: tempo-values
+      valuesKey: values.yaml
+---
+# ── OTel Collector (raw manifests from repo) ───────────────────
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: otel-collector
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: discord-dkp-bot
+  path: ./deploy/observability
+  prune: true
+  # Only apply namespace.yaml and otel-collector.yaml (Helm handles the rest)
+  patches:
+    - target:
+        kind: ConfigMap
+      patch: |
+        $patch: delete
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: unused

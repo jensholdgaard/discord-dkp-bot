@@ -1,0 +1,17 @@
+# Flux GitRepository — points at this repository
+#
+# This resource tells Flux where to find the source of truth.
+# The `flux bootstrap` command creates the flux-system namespace and
+# its own GitRepository automatically; this file documents the expected
+# state for reference and can be applied manually if needed.
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: discord-dkp-bot
+  namespace: flux-system
+spec:
+  interval: 5m
+  url: https://github.com/jensholdgaard/discord-dkp-bot.git
+  ref:
+    branch: main

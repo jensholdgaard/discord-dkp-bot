@@ -35,7 +35,7 @@ func newTestDB(t *testing.T) *sqlx.DB {
 		t.Fatalf("reading migration: %v", err)
 	}
 
-	ctr, err := tcpostgres.Run(ctx, "postgres:16-alpine",
+	ctr, err := tcpostgres.Run(ctx, "postgres:16.6-alpine",
 		tcpostgres.WithDatabase("dkpbot_test"),
 		tcpostgres.WithUsername("test"),
 		tcpostgres.WithPassword("test"),

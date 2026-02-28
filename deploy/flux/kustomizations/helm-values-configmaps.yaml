@@ -1,0 +1,159 @@
+# ConfigMaps wrapping Helm values files for Flux HelmRelease valuesFrom.
+#
+# These ConfigMaps allow Flux HelmReleases to consume the same values
+# files used by the manual install.sh script, keeping a single source
+# of truth.
+#
+# Apply once (Flux will keep them reconciled via the observability
+# Kustomization targeting this directory):
+#   kubectl apply -f deploy/observability/helm-values-configmaps.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-prometheus-stack-values
+  namespace: flux-system
+data:
+  values.yaml: |
+    grafana:
+      enabled: true
+      adminPassword: "changeme"
+      persistence:
+        enabled: true
+        size: 5Gi
+      additionalDataSources:
+        - name: Loki
+          type: loki
+          access: proxy
+          url: http://loki-gateway.observability.svc:80
+          jsonData:
+            derivedFields:
+              - datasourceUid: tempo
+                matcherRegex: '"traceID":"(\w+)"'
+                name: TraceID
+                url: "$${__value.raw}"
+        - name: Tempo
+          type: tempo
+          access: proxy
+          uid: tempo
+          url: http://tempo.observability.svc:3100
+          jsonData:
+            tracesToLogsV2:
+              datasourceUid: loki
+              filterByTraceID: true
+            serviceMap:
+              datasourceUid: prometheus
+      sidecar:
+        dashboards:
+          enabled: true
+          searchNamespace: ALL
+    prometheus:
+      prometheusSpec:
+        retention: 15d
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 20Gi
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+    alertmanager:
+      enabled: true
+      alertmanagerSpec:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-values
+  namespace: flux-system
+data:
+  values.yaml: |
+    loki:
+      auth_enabled: false
+      commonConfig:
+        replication_factor: 1
+      storage:
+        type: filesystem
+      schemaConfig:
+        configs:
+          - from: "2024-01-01"
+            store: tsdb
+            object_store: filesystem
+            schema: v13
+            index:
+              prefix: index_
+              period: 24h
+    deploymentMode: SingleBinary
+    singleBinary:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 200m
+          memory: 512Mi
+      persistence:
+        enabled: true
+        size: 10Gi
+    gateway:
+      enabled: true
+      replicas: 1
+    backend:
+      replicas: 0
+    read:
+      replicas: 0
+    write:
+      replicas: 0
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-values
+  namespace: flux-system
+data:
+  values.yaml: |
+    tempo:
+      metricsGenerator:
+        enabled: true
+        remoteWriteUrl: "http://kube-prometheus-stack-prometheus.observability.svc:9090/api/v1/write"
+      storage:
+        trace:
+          backend: local
+          local:
+            path: /var/tempo/traces
+          wal:
+            path: /var/tempo/wal
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi

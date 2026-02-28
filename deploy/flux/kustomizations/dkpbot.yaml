@@ -1,0 +1,68 @@
+# Flux HelmRelease — DKP Bot
+#
+# Deploys the DKP bot using the Helm chart in deploy/helm/dkpbot/.
+# Depends on the CNPG cluster (for the database Secret) and the
+# observability stack (for the OTel collector endpoint).
+#
+# Sensitive values (Discord token, etc.) should be provided via a
+# Kubernetes Secret managed outside of Git (e.g. using SOPS or
+# Sealed Secrets) and referenced in spec.valuesFrom.
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: dkpbot
+  namespace: flux-system
+spec:
+  type: oci
+  interval: 12h
+  url: oci://ghcr.io/jensholdgaard
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: dkpbot
+  namespace: flux-system
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: dkpbot
+      sourceRef:
+        kind: HelmRepository
+        name: dkpbot
+  targetNamespace: dkpbot
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  dependsOn:
+    - name: cnpg-cluster
+    - name: kube-prometheus-stack
+  values:
+    replicaCount: 3
+    cloudnativePG:
+      enabled: true
+      clusterName: dkpbot-db
+    config:
+      server:
+        port: 8080
+        shutdown_timeout: "15s"
+      telemetry:
+        service_name: "dkpbot"
+        service_version: "0.1.0"
+        otlp_endpoint: "otel-collector.observability.svc:4318"
+        insecure: true
+    leaderElection:
+      enabled: true
+  # Override sensitive values from a Secret not stored in Git.
+  # Create with:  kubectl -n flux-system create secret generic dkpbot-secrets \
+  #   --from-literal=config.discord.token=YOUR_TOKEN \
+  #   --from-literal=config.discord.guild_id=YOUR_GUILD_ID
+  valuesFrom:
+    - kind: Secret
+      name: dkpbot-secrets
+      optional: true

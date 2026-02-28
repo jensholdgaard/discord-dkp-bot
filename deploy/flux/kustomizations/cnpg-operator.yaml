@@ -1,0 +1,36 @@
+# Flux Kustomization — CloudNative-PG Operator
+#
+# Installs the CNPG operator via its upstream Helm chart.
+# All other database resources depend on this.
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: cnpg
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://cloudnative-pg.github.io/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cnpg-operator
+  namespace: flux-system
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: cloudnative-pg
+      version: "0.23.*"
+      sourceRef:
+        kind: HelmRepository
+        name: cnpg
+  targetNamespace: cnpg-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3

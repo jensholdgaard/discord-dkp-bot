@@ -7,25 +7,42 @@
 #   3. Applies the cluster manifests (control-plane, workers)
 #   4. Waits for the workload cluster to become ready
 #   5. Pivots CAPI management to the workload cluster
-#   6. Deletes the local Kind cluster
+#   6. Installs FluxCD for GitOps self-management
+#   7. Deletes the local Kind cluster
 #
 # Prerequisites:
-#   - kind, kubectl, clusterctl, hcloud CLI installed
-#   - clusterctl-settings.env populated with your Hetzner API token
+#   - kind, kubectl, clusterctl, hcloud, flux CLI installed
+#   - A copy of clusterctl-settings.env with your credentials
+#     (see clusterctl-settings.env for the template)
 #
 # Usage:
+#   cp clusterctl-settings.env .env   # fill in real values
+#   source .env
 #   ./bootstrap.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# ─── Load settings ──────────────────────────────────────────────
-# shellcheck source=clusterctl-settings.env
-source "${SCRIPT_DIR}/clusterctl-settings.env"
+# ─── Load settings (fall back to the template if .env is absent) ─
+if [[ -f "${SCRIPT_DIR}/.env" ]]; then
+  # shellcheck source=.env
+  source "${SCRIPT_DIR}/.env"
+else
+  echo "⚠  No .env found — falling back to clusterctl-settings.env template."
+  echo "   Copy clusterctl-settings.env → .env and fill in real values."
+  # shellcheck source=clusterctl-settings.env
+  source "${SCRIPT_DIR}/clusterctl-settings.env"
+fi
 
 CLUSTER_NAME="${CLUSTER_NAME:-dkpbot-prod}"
 KIND_CLUSTER="capi-management"
+
+# ─── Required env check ─────────────────────────────────────────
+: "${HCLOUD_TOKEN:?Set HCLOUD_TOKEN in .env}"
+: "${GITHUB_TOKEN:?Set GITHUB_TOKEN in .env (needed for Flux bootstrap)}"
+: "${GITHUB_USER:?Set GITHUB_USER in .env (GitHub owner for Flux)}"
 
 echo "==> Step 1: Create local Kind management cluster"
 if kind get clusters 2>/dev/null | grep -q "^${KIND_CLUSTER}$"; then
@@ -95,17 +112,46 @@ unset KUBECONFIG
 clusterctl move \
   --to-kubeconfig="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
 
-echo "==> Step 10: Clean up local Kind cluster"
+echo "==> Step 10: Bootstrap FluxCD on the workload cluster"
+export KUBECONFIG="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
+
+flux bootstrap github \
+  --owner="${GITHUB_USER}" \
+  --repository=discord-dkp-bot \
+  --branch=main \
+  --path=deploy/flux \
+  --personal \
+  --token-auth
+
+echo "    Applying Helm values ConfigMaps for Flux HelmReleases..."
+kubectl apply -f "${DEPLOY_DIR}/flux/kustomizations/helm-values-configmaps.yaml"
+
+echo "    Applying Flux Kustomizations..."
+kubectl apply -f "${DEPLOY_DIR}/flux/kustomizations/"
+
+echo "    Creating DKP bot secrets placeholder (edit with real values)..."
+kubectl -n flux-system create secret generic dkpbot-secrets \
+  --from-literal=config.discord.token="REPLACE_ME" \
+  --from-literal=config.discord.guild_id="REPLACE_ME" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+echo "==> Step 11: Clean up local Kind cluster"
+unset KUBECONFIG
 kind delete cluster --name "${KIND_CLUSTER}"
 
 echo ""
-echo "✅ Cluster '${CLUSTER_NAME}' is ready!"
+echo "✅ Cluster '${CLUSTER_NAME}' is ready and self-managed via FluxCD!"
 echo ""
 echo "Use the workload cluster:"
 echo "  export KUBECONFIG=${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
 echo "  kubectl get nodes"
 echo ""
-echo "Next steps:"
-echo "  1. Install CloudNative-PG:  kubectl apply -f ../cloudnative-pg/"
-echo "  2. Install observability:   bash ../observability/install.sh"
-echo "  3. Deploy the DKP bot:      helm install dkpbot ../helm/dkpbot/"
+echo "FluxCD will now reconcile all services from Git:"
+echo "  flux get kustomizations"
+echo "  flux get helmreleases -A"
+echo ""
+echo "⚠  Update the dkpbot-secrets Secret with real Discord credentials:"
+echo "  kubectl -n flux-system edit secret dkpbot-secrets"
+echo ""
+echo "⚠  Update backup-s3-credentials in the dkpbot namespace with real"
+echo "  Hetzner Object Storage credentials for CNPG backups."
