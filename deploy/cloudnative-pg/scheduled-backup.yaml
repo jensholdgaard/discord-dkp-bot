@@ -1,0 +1,16 @@
+# CloudNative-PG — Scheduled Backup
+#
+# Runs a daily base backup at 02:00 UTC.
+# WAL archiving is continuous (configured in cluster.yaml).
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: dkpbot-db-daily
+  namespace: dkpbot
+spec:
+  schedule: "0 2 * * *"
+  backupOwnerReference: self
+  immediate: false
+  cluster:
+    name: dkpbot-db

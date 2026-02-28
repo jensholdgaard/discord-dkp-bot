@@ -1,0 +1,99 @@
+# CloudNative-PG — PostgreSQL Cluster for DKP Bot
+#
+# This creates a 3-instance PostgreSQL 16 cluster managed by CloudNative-PG.
+# The operator handles:
+#   - Automated failover
+#   - WAL archiving to Hetzner Object Storage (S3-compatible)
+#   - Continuous backup and point-in-time recovery
+#
+# Prerequisites:
+#   - CloudNative-PG operator installed (see operator.yaml)
+#   - S3 credentials secret for backups (see below)
+#
+# Apply with:
+#   kubectl apply -f cluster.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dkpbot
+  labels:
+    app.kubernetes.io/part-of: dkpbot
+---
+# S3 credentials for backup to Hetzner Object Storage.
+# Replace with your actual credentials or use an external secret manager.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backup-s3-credentials
+  namespace: dkpbot
+type: Opaque
+stringData:
+  ACCESS_KEY_ID: "<your-hetzner-s3-access-key>"
+  ACCESS_SECRET_KEY: "<your-hetzner-s3-secret-key>"
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: dkpbot-db
+  namespace: dkpbot
+spec:
+  description: "DKP Bot PostgreSQL cluster"
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.6-bookworm
+  instances: 3
+
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "256MB"
+      effective_cache_size: "512MB"
+      maintenance_work_mem: "64MB"
+      checkpoint_completion_target: "0.9"
+      wal_buffers: "16MB"
+      default_statistics_target: "100"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      work_mem: "4MB"
+      huge_pages: "off"
+      min_wal_size: "1GB"
+      max_wal_size: "4GB"
+
+  bootstrap:
+    initdb:
+      database: dkpbot
+      owner: dkpbot
+      encoding: UTF8
+      localeCType: C
+      localeCollate: C
+
+  storage:
+    size: 10Gi
+    storageClass: hcloud-volumes
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+  monitoring:
+    enablePodMonitor: true
+
+  backup:
+    barmanObjectStore:
+      destinationPath: "s3://dkpbot-backups/"
+      endpointURL: "https://fsn1.your-objectstorage.com"
+      s3Credentials:
+        accessKeyId:
+          name: backup-s3-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: backup-s3-credentials
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+    retentionPolicy: "30d"

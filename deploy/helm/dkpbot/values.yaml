@@ -42,8 +42,17 @@ config:
   telemetry:
     service_name: "dkpbot"
     service_version: "0.1.0"
-    otlp_endpoint: "otel-collector:4318"
+    otlp_endpoint: "otel-collector.observability.svc:4318"
     insecure: true
+
+# CloudNative-PG integration.
+# When enabled, database credentials are read from the Secret created
+# by the CNPG operator instead of from the inline config above.
+cloudnativePG:
+  enabled: false
+  # Name of the CNPG Cluster resource (the operator creates a Secret
+  # named "<clusterName>-app" with host, port, dbname, user, password).
+  clusterName: "dkpbot-db"
 
 livenessProbe:
   httpGet:

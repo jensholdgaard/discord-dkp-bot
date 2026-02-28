@@ -1,0 +1,70 @@
+# Helm values for kube-prometheus-stack
+#
+# Installs Prometheus, Grafana, and alerting.
+# Install with:
+#   helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#     -n observability -f kube-prometheus-stack-values.yaml
+
+grafana:
+  enabled: true
+  adminPassword: "changeme"  # Change in production or use a Secret
+  persistence:
+    enabled: true
+    size: 5Gi
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki-gateway.observability.svc:80
+      jsonData:
+        derivedFields:
+          - datasourceUid: tempo
+            matcherRegex: '"traceID":"(\w+)"'
+            name: TraceID
+            url: "$${__value.raw}"
+    - name: Tempo
+      type: tempo
+      access: proxy
+      uid: tempo
+      url: http://tempo.observability.svc:3100
+      jsonData:
+        tracesToLogsV2:
+          datasourceUid: loki
+          filterByTraceID: true
+        serviceMap:
+          datasourceUid: prometheus
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi

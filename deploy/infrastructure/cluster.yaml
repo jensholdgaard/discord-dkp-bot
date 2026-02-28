@@ -1,0 +1,49 @@
+# Cluster API – Hetzner Cluster definition
+#
+# This manifest creates a Kubernetes cluster on Hetzner Cloud using the
+# Cluster API Hetzner provider (CAPH).
+#
+# Prerequisites:
+#   - A management cluster with CAPH installed (see bootstrap.sh)
+#   - Environment variables from clusterctl-settings.env
+#
+# Apply with: kubectl apply -f cluster.yaml
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: dkpbot-prod
+  namespace: default
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - "10.244.0.0/16"
+    services:
+      cidrBlocks:
+        - "10.96.0.0/12"
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: dkpbot-prod-control-plane
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: HCloudCluster
+    name: dkpbot-prod
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: HCloudCluster
+metadata:
+  name: dkpbot-prod
+  namespace: default
+spec:
+  controlPlaneRegions:
+    - fsn1
+  network:
+    enabled: true
+    networkZone: eu-central
+    cidrBlock: "10.0.0.0/16"
+  sshKeys:
+    - name: dkpbot-ssh
+  controlPlaneLoadBalancer:
+    region: fsn1
