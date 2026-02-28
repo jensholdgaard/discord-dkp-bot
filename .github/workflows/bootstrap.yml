@@ -159,6 +159,51 @@ jobs:
           kubectl apply -f deploy/infrastructure/control-plane.yaml
           kubectl apply -f deploy/infrastructure/workers.yaml
 
+      # ── Step 4a: Start background provisioning logger ────────
+      - name: "Step 4a: Start provisioning debug logger"
+        run: |
+          LOG="/tmp/bootstrap-debug.log"
+          echo "=== Bootstrap provisioning log ===" > "${LOG}"
+          echo "Cluster: ${CLUSTER_NAME}" >> "${LOG}"
+          echo "Started: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${LOG}"
+          echo "" >> "${LOG}"
+
+          # Background loop: capture CRD states and events every 30s
+          (
+            while true; do
+              {
+                echo "════════════════════════════════════════════════════"
+                echo "  Snapshot at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                echo "════════════════════════════════════════════════════"
+                echo ""
+                echo "▸ Clusters:"
+                kubectl get clusters -A -o wide 2>/dev/null || echo "  (not available)"
+                echo ""
+                echo "▸ HetznerClusters:"
+                kubectl get hetznerclusters -A -o wide 2>/dev/null || echo "  (not available)"
+                echo ""
+                echo "▸ KubeadmControlPlanes:"
+                kubectl get kubeadmcontrolplane -A -o wide 2>/dev/null || echo "  (not available)"
+                echo ""
+                echo "▸ Machines:"
+                kubectl get machines -A -o wide 2>/dev/null || echo "  (not available)"
+                echo ""
+                echo "▸ MachineDeployments:"
+                kubectl get machinedeployment -A -o wide 2>/dev/null || echo "  (not available)"
+                echo ""
+                echo "▸ HCloudMachines:"
+                kubectl get hcloudmachines -A -o wide 2>/dev/null || echo "  (not available)"
+                echo ""
+                echo "▸ Recent events (last 20):"
+                kubectl get events --sort-by='.lastTimestamp' -A 2>/dev/null | tail -20 || echo "  (not available)"
+                echo ""
+              } >> "${LOG}" 2>&1
+              sleep 30
+            done
+          ) &
+          echo $! > /tmp/debug-logger.pid
+          echo "Background debug logger started (PID $(cat /tmp/debug-logger.pid)), writing to ${LOG}"
+
       # ── Step 5: Wait for workload cluster ────────────────────
       - name: "Step 5: Wait for workload cluster"
         run: |
@@ -193,42 +238,50 @@ jobs:
             sleep "${INTERVAL}"
           done
 
-          echo "::error::Timed out after ${TIMEOUT}s waiting for cluster/${CLUSTER_NAME} to become Ready"
+          echo "::error::Timed out after ${SECONDS}s waiting for cluster/${CLUSTER_NAME} to become Ready"
           exit 1
 
       # ── Step 5a: Debug diagnostics on failure ─────────────────
       - name: "Step 5a: Cluster provisioning diagnostics"
         if: failure()
         run: |
+          LOG="/tmp/bootstrap-debug.log"
           echo "## 🔍 Cluster Provisioning Diagnostics" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          echo "=== Cluster describe ==="
-          kubectl describe cluster "${CLUSTER_NAME}" 2>/dev/null || true
-          echo ""
+          {
+            echo "════════════════════════════════════════════════════"
+            echo "  FAILURE DIAGNOSTICS at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "════════════════════════════════════════════════════"
+            echo ""
 
-          echo "=== HetznerCluster describe ==="
-          kubectl describe hetznercluster "${CLUSTER_NAME}" 2>/dev/null || true
-          echo ""
+            echo "=== Cluster describe ==="
+            kubectl describe cluster "${CLUSTER_NAME}" 2>&1 || true
+            echo ""
 
-          echo "=== KubeadmControlPlane describe ==="
-          kubectl describe kubeadmcontrolplane -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" 2>/dev/null || true
-          echo ""
+            echo "=== HetznerCluster describe ==="
+            kubectl describe hetznercluster "${CLUSTER_NAME}" 2>&1 || true
+            echo ""
 
-          echo "=== Machines describe ==="
-          kubectl describe machines -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" 2>/dev/null || true
-          echo ""
+            echo "=== KubeadmControlPlane describe ==="
+            kubectl describe kubeadmcontrolplane -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" 2>&1 || true
+            echo ""
 
-          echo "=== MachineDeployments describe ==="
-          kubectl describe machinedeployment -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" 2>/dev/null || true
-          echo ""
+            echo "=== Machines describe ==="
+            kubectl describe machines -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" 2>&1 || true
+            echo ""
 
-          echo "=== Cluster API events (last 50) ==="
-          kubectl get events --sort-by='.lastTimestamp' 2>/dev/null | tail -50 || true
-          echo ""
+            echo "=== MachineDeployments describe ==="
+            kubectl describe machinedeployment -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" 2>&1 || true
+            echo ""
 
-          echo "=== CAPH controller logs (last 80 lines) ==="
-          kubectl logs deployment/caph-controller-manager -n caph-system --tail=80 2>/dev/null || true
+            echo "=== Cluster API events (last 50) ==="
+            kubectl get events --sort-by='.lastTimestamp' 2>&1 | tail -50 || true
+            echo ""
+
+            echo "=== CAPH controller logs (last 80 lines) ==="
+            kubectl logs deployment/caph-controller-manager -n caph-system --tail=80 2>&1 || true
+          } | tee -a "${LOG}"
 
       # ── Step 6: Get workload kubeconfig ──────────────────────
       - name: "Step 6: Get workload cluster kubeconfig"
@@ -350,6 +403,32 @@ jobs:
             --from-literal=config.discord.token="${DISCORD_TOK}" \
             --from-literal=config.discord.guild_id="${DISCORD_GID}" \
             --dry-run=client -o yaml | kubectl apply -f -
+
+      # ── Stop debug logger and upload log ─────────────────────
+      - name: "Stop provisioning debug logger"
+        if: always()
+        run: |
+          if [[ -f /tmp/debug-logger.pid ]]; then
+            PID=$(cat /tmp/debug-logger.pid)
+            kill "${PID}" 2>/dev/null || true
+            wait "${PID}" 2>/dev/null || true
+            echo "Debug logger (PID ${PID}) stopped."
+          fi
+          LOG="/tmp/bootstrap-debug.log"
+          if [[ -f "${LOG}" ]]; then
+            echo "" >> "${LOG}"
+            echo "=== Log ended at $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" >> "${LOG}"
+            echo "Debug log size: $(wc -l < "${LOG}") lines"
+          fi
+
+      - name: "Upload provisioning debug log"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-debug-log-${{ inputs.cluster_name }}
+          path: /tmp/bootstrap-debug.log
+          retention-days: 7
+          if-no-files-found: warn
 
       # ── Step 14: Clean up Kind ─────────────────────────────
       - name: "Step 14: Delete Kind management cluster"
