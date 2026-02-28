@@ -104,14 +104,70 @@ kubectl create secret generic hetzner \
 # Label the secret so clusterctl move copies it to the workload cluster
 kubectl patch secret hetzner -p '{"metadata":{"labels":{"clusterctl.cluster.x-k8s.io/move":""}}}'
 
+echo "==> Step 3b: Ensure SSH key exists in Hetzner Cloud"
+SSH_KEY_NAME="${HCLOUD_SSH_KEY:-dkpbot-ssh}"
+echo "    Checking if SSH key '${SSH_KEY_NAME}' exists..."
+
+RESP=$(curl -sf -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
+  "https://api.hetzner.cloud/v1/ssh_keys?name=${SSH_KEY_NAME}" 2>&1) || {
+  echo "ERROR: Could not query Hetzner Cloud SSH keys API."
+  exit 1
+}
+
+KEY_COUNT=$(echo "${RESP}" | jq '.ssh_keys | length')
+
+if [[ "${KEY_COUNT}" -gt 0 ]]; then
+  echo "    ✅ SSH key '${SSH_KEY_NAME}' already exists in Hetzner Cloud."
+else
+  echo "    SSH key '${SSH_KEY_NAME}' not found. Creating..."
+
+  # Use the provided public key file, or generate a new key pair
+  if [[ -n "${HCLOUD_SSH_PUBKEY_FILE:-}" && -f "${HCLOUD_SSH_PUBKEY_FILE}" ]]; then
+    SSH_PUBKEY=$(cat "${HCLOUD_SSH_PUBKEY_FILE}")
+    echo "    Using public key from ${HCLOUD_SSH_PUBKEY_FILE}"
+  elif [[ -f "${HOME}/.ssh/id_ed25519.pub" ]]; then
+    SSH_PUBKEY=$(cat "${HOME}/.ssh/id_ed25519.pub")
+    echo "    Using existing public key from ~/.ssh/id_ed25519.pub"
+  elif [[ -f "${HOME}/.ssh/id_rsa.pub" ]]; then
+    SSH_PUBKEY=$(cat "${HOME}/.ssh/id_rsa.pub")
+    echo "    Using existing public key from ~/.ssh/id_rsa.pub"
+  else
+    echo "    No existing SSH key found — generating a new Ed25519 key pair."
+    ssh-keygen -t ed25519 -f /tmp/hcloud-ssh-key -N "" -C "dkpbot-bootstrap" >/dev/null 2>&1
+    SSH_PUBKEY=$(cat /tmp/hcloud-ssh-key.pub)
+    echo "    ⚠  Generated key pair saved to /tmp/hcloud-ssh-key (private) and /tmp/hcloud-ssh-key.pub (public)."
+    echo "    Save the private key if you need SSH access to your nodes."
+  fi
+
+  HTTP_CODE=$(curl -s -o /tmp/ssh-create-resp.json -w "%{http_code}" \
+    -X POST \
+    -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
+    -H "Content-Type: application/json" \
+    --data "$(jq -n --arg name "${SSH_KEY_NAME}" --arg key "${SSH_PUBKEY}" \
+      '{name: $name, public_key: $key}')" \
+    "https://api.hetzner.cloud/v1/ssh_keys")
+
+  if [[ "${HTTP_CODE}" =~ ^2 ]]; then
+    echo "    ✅ SSH key '${SSH_KEY_NAME}' created in Hetzner Cloud."
+  else
+    echo "ERROR: Failed to create SSH key (HTTP ${HTTP_CODE})."
+    cat /tmp/ssh-create-resp.json
+    rm -f /tmp/ssh-create-resp.json
+    exit 1
+  fi
+  rm -f /tmp/ssh-create-resp.json
+fi
+
 echo "==> Step 4: Apply cluster manifests"
-# Template replica counts from environment variables
+# Template replica counts and SSH key name from environment variables
 sed "s/replicas: 3/replicas: ${CONTROL_PLANE_MACHINE_COUNT:-1}/" \
   "${SCRIPT_DIR}/control-plane.yaml" > /tmp/control-plane.yaml
 sed "s/replicas: 2/replicas: ${WORKER_MACHINE_COUNT:-1}/" \
   "${SCRIPT_DIR}/workers.yaml" > /tmp/workers.yaml
+sed "s/name: dkpbot-ssh/name: ${SSH_KEY_NAME}/" \
+  "${SCRIPT_DIR}/cluster.yaml" > /tmp/cluster.yaml
 
-kubectl apply -f "${SCRIPT_DIR}/cluster.yaml"
+kubectl apply -f /tmp/cluster.yaml
 kubectl apply -f /tmp/control-plane.yaml
 kubectl apply -f /tmp/workers.yaml
 
