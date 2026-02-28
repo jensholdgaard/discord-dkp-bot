@@ -1,13 +1,17 @@
 # Discord DKP Bot Configuration
+#
+# Environment variables can be referenced using ${VAR} or $VAR syntax,
+# following the CNCF convention (OTel Collector, Prometheus, etc.).
+
 discord:
-  token: "your-discord-bot-token"
-  guild_id: "your-guild-id"
+  token: "${DISCORD_TOKEN}"
+  guild_id: "${DISCORD_GUILD_ID}"
 
 database:
   host: "localhost"
   port: 5432
-  user: "dkpbot"
-  password: "changeme"
+  user: ${DB_USER}
+  password: ${DB_PASSWORD}
   dbname: "dkpbot"
   sslmode: "disable"
   driver: "sqlx"  # "sqlx" or "ent"
