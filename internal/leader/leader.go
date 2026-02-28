@@ -7,42 +7,15 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+
+	"github.com/jensholdgaard/discord-dkp-bot/internal/config"
 )
-
-// Config holds leader election settings.
-type Config struct {
-	// Enabled turns leader election on/off.
-	Enabled bool `yaml:"enabled"`
-	// LeaseName is the name of the Kubernetes Lease resource.
-	LeaseName string `yaml:"lease_name"`
-	// LeaseNamespace is the namespace of the Lease resource.
-	LeaseNamespace string `yaml:"lease_namespace"`
-	// LeaseDuration is how long a leader holds the lease.
-	LeaseDuration time.Duration `yaml:"lease_duration"`
-	// RenewDeadline is how long the leader tries to renew before giving up.
-	RenewDeadline time.Duration `yaml:"renew_deadline"`
-	// RetryPeriod is the time between attempts to acquire/renew leadership.
-	RetryPeriod time.Duration `yaml:"retry_period"`
-}
-
-// Defaults returns a Config with sensible defaults.
-func Defaults() Config {
-	return Config{
-		Enabled:        false,
-		LeaseName:      "dkpbot-leader",
-		LeaseNamespace: "default",
-		LeaseDuration:  15 * time.Second,
-		RenewDeadline:  10 * time.Second,
-		RetryPeriod:    2 * time.Second,
-	}
-}
 
 // identity returns a unique identity for this instance.
 // It uses the POD_NAME env var if set, otherwise the hostname.
@@ -58,7 +31,7 @@ func identity() string {
 }
 
 // ClientFactory creates a Kubernetes clientset.
-// Extracted as a variable for testing.
+// Extracted as a package-level variable so tests can replace it.
 var ClientFactory = func() (kubernetes.Interface, error) {
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
@@ -75,7 +48,7 @@ var ClientFactory = func() (kubernetes.Interface, error) {
 // this instance becomes the leader; it should block until ctx is done.
 // The onStoppedLeading callback runs when leadership is lost.
 // Run itself blocks until the election loop exits.
-func Run(ctx context.Context, cfg Config, logger *slog.Logger, onStartedLeading func(ctx context.Context), onStoppedLeading func()) error {
+func Run(ctx context.Context, cfg config.LeaderElectionConfig, logger *slog.Logger, onStartedLeading func(ctx context.Context), onStoppedLeading func()) error {
 	id := identity()
 	logger.Info("starting leader election",
 		slog.String("identity", id),
