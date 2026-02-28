@@ -38,7 +38,7 @@ metadata:
   namespace: default
 spec:
   controlPlaneRegions:
-    - fsn1
+    - nbg1
   network:
     enabled: true
     networkZone: eu-central
@@ -46,4 +46,4 @@ spec:
   sshKeys:
     - name: dkpbot-ssh
   controlPlaneLoadBalancer:
-    region: fsn1
+    region: nbg1

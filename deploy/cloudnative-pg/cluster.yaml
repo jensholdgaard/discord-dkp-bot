@@ -81,7 +81,7 @@ spec:
   backup:
     barmanObjectStore:
       destinationPath: "s3://dkpbot-backups/"
-      endpointURL: "https://fsn1.your-objectstorage.com"  # REPLACE with actual Hetzner S3 endpoint
+      endpointURL: "https://nbg1.your-objectstorage.com"  # REPLACE with actual Hetzner S3 endpoint
       s3Credentials:
         accessKeyId:
           name: backup-s3-credentials
