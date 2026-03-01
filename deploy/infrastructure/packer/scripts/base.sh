@@ -20,8 +20,21 @@ set -o pipefail
 
 echo '--> Starting Base Installation.'
 
+# Prefer IPv4 for all outbound connections.
+# registry.k8s.io and pkgs.k8s.io return 403 Forbidden when accessed from
+# Hetzner Cloud via IPv6. This setting is baked into the snapshot so that it
+# applies both during the Packer build and on actual cluster nodes at boot.
+# - /etc/gai.conf affects libc getaddrinfo() (used by apt, curl, etc.)
+# - /etc/apt/apt.conf.d/99force-ipv4 is an additional safeguard for apt
+# Go programs (containerd, kubeadm) are configured separately in cri.sh.
+cat > /etc/gai.conf << 'EOF'
+# Prefer IPv4-mapped addresses over native IPv6 (higher precedence = preferred)
+precedence ::ffff:0:0/96  100
+EOF
+echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
+
 # Set locale
-localectl set-locale LANG=en_US.UTF-8 
+localectl set-locale LANG=en_US.UTF-8
 localectl set-locale LANGUAGE=en_US.UTF-8
 
 # update all packages
