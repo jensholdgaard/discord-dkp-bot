@@ -239,13 +239,31 @@ echo "==> Step 9: Pivot CAPI management to the workload cluster"
 # Switch back to management cluster (KUBECONFIG was pointing at workload)
 unset KUBECONFIG
 
-# Wait for cluster.Ready=True before pivoting. All control plane nodes must be
-# Ready (Cilium DaemonSet propagates as they join). For multi-node clusters
-# this can take several minutes beyond the node wait above.
-echo "    Waiting for cluster to be fully Ready (up to 15 min)..."
-kubectl wait --for=condition=Ready \
-  "cluster/${CLUSTER_NAME}" --timeout=900s
+# Initialize CAPI + CAPH on the workload cluster so it can manage its own
+# objects after the pivot. Per CAPH docs this must happen before clusterctl move.
+echo "    Initializing CAPI providers on workload cluster..."
+export EXP_CLUSTER_RESOURCE_SET="true"
+clusterctl init \
+  --kubeconfig="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig" \
+  --core cluster-api \
+  --bootstrap kubeadm \
+  --control-plane kubeadm \
+  --infrastructure hetzner
 
+echo "    Waiting for CAPH controller on workload cluster..."
+kubectl --kubeconfig="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig" \
+  wait --for=condition=Available --timeout=300s \
+  deployment/caph-controller-manager -n caph-system
+
+echo "    Waiting for CAPH webhook endpoint on workload cluster..."
+until kubectl --kubeconfig="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig" \
+    -n caph-system get endpoints caph-webhook-service \
+    -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null | grep -q '.'; do
+  sleep 2
+done
+echo "    ✅ CAPH webhook ready on workload cluster."
+
+echo "    Pivoting CAPI objects to workload cluster..."
 clusterctl move \
   --to-kubeconfig="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
 
