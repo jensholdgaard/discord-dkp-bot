@@ -165,6 +165,16 @@ jobs:
       - name: Clone capictl
         run: git clone --depth=1 https://github.com/nicholasdille/capictl.git /tmp/capictl
 
+      # capictl expects to create the caph SSH key itself. Delete any leftover
+      # key from a previous failed run so it always generates a fresh pair.
+      - name: Clean up stale caph SSH key
+        run: |
+          KEY_ID=$(hcloud ssh-key list --selector=type=caph --output=json | jq -r '.[0].id // empty')
+          if [[ -n "${KEY_ID}" ]]; then
+            echo "Deleting stale caph SSH key ${KEY_ID} from previous run"
+            hcloud ssh-key delete "${KEY_ID}"
+          fi
+
       # ── Run capictl ─────────────────────────────────────────────
       # capictl handles: Kind bootstrap cluster, clusterctl init, cluster
       # provisioning with pre-baked image, Cilium CNI, CCM/CSI via
