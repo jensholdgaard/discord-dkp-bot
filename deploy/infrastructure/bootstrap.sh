@@ -42,7 +42,9 @@ KIND_CLUSTER="capi-management"
 
 # ─── Required env check ─────────────────────────────────────────
 : "${HCLOUD_TOKEN:?Set HCLOUD_TOKEN in .env}"
-: "${GITHUB_TOKEN:?Set GITHUB_TOKEN in .env (needed for Flux bootstrap)}"
+# Fall back to gh CLI token if GITHUB_TOKEN is not explicitly set
+GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token 2>/dev/null)}"
+: "${GITHUB_TOKEN:?Could not obtain GITHUB_TOKEN — set it in .env or run: gh auth login}"
 : "${GITHUB_USER:?Set GITHUB_USER in .env (GitHub owner for Flux)}"
 
 # ─── Validate Hetzner API token ─────────────────────────────────
@@ -95,6 +97,13 @@ echo "    Waiting for Hetzner CRDs to be established..."
 kubectl wait --for=condition=Established --timeout=60s \
   crd/hetznerclusters.infrastructure.cluster.x-k8s.io \
   crd/hcloudmachinetemplates.infrastructure.cluster.x-k8s.io
+
+echo "    Waiting for CAPH webhook service to be ready..."
+until kubectl -n caph-system get endpoints caph-webhook-service \
+    -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null | grep -q '.'; do
+  sleep 2
+done
+echo "    ✅ CAPH webhook service is ready."
 
 echo "==> Step 3: Create the Hetzner secret"
 kubectl create secret generic hetzner \
@@ -162,10 +171,12 @@ else
 fi
 
 echo "==> Step 4: Apply cluster manifests"
-# Template replica counts and SSH key name from environment variables
-sed "s/replicas: 3/replicas: ${CONTROL_PLANE_MACHINE_COUNT:-1}/" \
+# Template replica counts, machine types, and SSH key name from environment variables
+sed -e "s/replicas: 3/replicas: ${CONTROL_PLANE_MACHINE_COUNT:-1}/" \
+    -e "s/type: cx23/type: ${HCLOUD_CONTROL_PLANE_MACHINE_TYPE:-cx23}/" \
   "${SCRIPT_DIR}/control-plane.yaml" > /tmp/control-plane.yaml
-sed "s/replicas: 2/replicas: ${WORKER_MACHINE_COUNT:-1}/" \
+sed -e "s/replicas: 2/replicas: ${WORKER_MACHINE_COUNT:-1}/" \
+    -e "s/type: cx23/type: ${HCLOUD_WORKER_MACHINE_TYPE:-cx23}/" \
   "${SCRIPT_DIR}/workers.yaml" > /tmp/workers.yaml
 sed "s/name: dkpbot-ssh/name: ${SSH_KEY_NAME}/" \
   "${SCRIPT_DIR}/cluster.yaml" > /tmp/cluster.yaml
@@ -174,14 +185,27 @@ kubectl apply -f /tmp/cluster.yaml
 kubectl apply -f /tmp/control-plane.yaml
 kubectl apply -f /tmp/workers.yaml
 
-echo "==> Step 5: Wait for workload cluster to be provisioned"
+echo "==> Step 5: Wait for control plane to initialize"
 echo "    This may take 10-20 minutes (plain Ubuntu images need time to install K8s components)..."
-kubectl wait --for=condition=Ready --timeout=1200s \
-  "cluster/${CLUSTER_NAME}" || {
-    echo "Cluster not ready after 20 minutes. Check:"
-    echo "  kubectl describe cluster ${CLUSTER_NAME}"
-    exit 1
-  }
+echo "    Waiting for kubeadm init to complete (KCP initialized=true)..."
+SECONDS=0
+TIMEOUT=1200
+while (( SECONDS < TIMEOUT )); do
+  INITIALIZED=$(kubectl get kubeadmcontrolplane \
+    -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" \
+    -o jsonpath='{.items[0].status.initialized}' 2>/dev/null || true)
+  if [[ "${INITIALIZED}" == "true" ]]; then
+    echo "    ✅ Control plane initialized after ${SECONDS}s"
+    break
+  fi
+  sleep 15
+  SECONDS=$(( SECONDS + 15 ))
+done
+if [[ "${INITIALIZED}" != "true" ]]; then
+  echo "ERROR: Timed out waiting for control plane to initialize. Check:"
+  echo "  kubectl describe kubeadmcontrolplane -l cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}"
+  exit 1
+fi
 
 echo "==> Step 6: Get workload cluster kubeconfig"
 clusterctl get kubeconfig "${CLUSTER_NAME}" > "${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
@@ -211,8 +235,14 @@ helm install cilium cilium/cilium \
 echo "    Waiting for nodes to become Ready..."
 kubectl wait --for=condition=Ready nodes --all --timeout=300s
 
-echo "==> Step 9: Pivot CAPI management to the workload cluster"
+# Now that CNI is up, nodes are Ready, so the cluster can reach Ready.
+# clusterctl move requires cluster.Ready=True before pivoting.
+echo "    Waiting for cluster to be fully Ready..."
 unset KUBECONFIG
+kubectl wait --for=condition=Ready \
+  "cluster/${CLUSTER_NAME}" --timeout=120s
+
+echo "==> Step 9: Pivot CAPI management to the workload cluster"
 clusterctl move \
   --to-kubeconfig="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
 

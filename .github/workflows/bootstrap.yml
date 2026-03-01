@@ -355,18 +355,24 @@ jobs:
           echo $! > /tmp/debug-logger.pid
           echo "Background debug logger started (PID $(cat /tmp/debug-logger.pid)), writing to ${LOG}"
 
-      # ── Step 5: Wait for workload cluster ────────────────────
-      - name: "Step 5: Wait for workload cluster"
+      # ── Step 5: Wait for control plane to initialize ─────────
+      # We wait for KubeadmControlPlane.status.initialized=true (kubeadm init
+      # has run and the API server is reachable) rather than cluster.Ready=true.
+      # The cluster cannot be Ready until nodes are Ready, and nodes cannot be
+      # Ready until CNI is installed — which happens in Step 8. We install CNI
+      # first, then let the cluster reach Ready on its own before the pivot.
+      - name: "Step 5: Wait for control plane to initialize"
         run: |
-          echo "Waiting for workload cluster (up to 20 minutes)..."
+          echo "Waiting for control plane to initialize (kubeadm init, up to 20 minutes)..."
           SECONDS=0
           TIMEOUT=1200
           INTERVAL=30
           while (( SECONDS < TIMEOUT )); do
-            # Check if cluster is ready without blocking
-            READY=$(kubectl get cluster "${CLUSTER_NAME}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
-            if [[ "${READY}" == "True" ]]; then
-              echo "✅ Cluster ${CLUSTER_NAME} is Ready after ${SECONDS}s"
+            INITIALIZED=$(kubectl get kubeadmcontrolplane \
+              -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" \
+              -o jsonpath='{.items[0].status.initialized}' 2>/dev/null || true)
+            if [[ "${INITIALIZED}" == "true" ]]; then
+              echo "✅ Control plane initialized after ${SECONDS}s"
               exit 0
             fi
 
@@ -389,7 +395,7 @@ jobs:
             sleep "${INTERVAL}"
           done
 
-          echo "::error::Timed out after ${SECONDS}s waiting for cluster/${CLUSTER_NAME} to become Ready (timeout: ${TIMEOUT}s)"
+          echo "::error::Timed out after ${SECONDS}s waiting for control plane to initialize (timeout: ${TIMEOUT}s)"
           exit 1
 
       # ── Step 5a: Debug diagnostics on failure ─────────────────
@@ -465,6 +471,14 @@ jobs:
 
           echo "Waiting for nodes to become Ready..."
           kubectl wait --for=condition=Ready nodes --all --timeout=300s
+
+          # Now that CNI is up, nodes are Ready, so the cluster can reach Ready.
+          # clusterctl move requires cluster.Ready=True before pivoting.
+          echo "Waiting for cluster to be fully Ready..."
+          kubectl config use-context kind-capi-management
+          kubectl wait --for=condition=Ready \
+            "cluster/${CLUSTER_NAME}" --timeout=120s
+          echo "KUBECONFIG=/tmp/workload.kubeconfig" >> "$GITHUB_ENV"
 
       # ── Step 9: Pivot CAPI ─────────────────────────────────
       - name: "Step 9: Pivot CAPI management to workload cluster"
