@@ -43,7 +43,7 @@ variable "build_location" {
 source "hcloud" "ubuntu" {
   image         = "${var.os}"
   location      = "${var.build_location}"
-  server_type   = "cx22"
+  server_type   = "cx23"
   ssh_username  = "root"
 
   snapshot_name = "${var.os}-${var.arch}-k8s-${var.kubernetes_version}"
