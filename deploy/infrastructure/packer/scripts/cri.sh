@@ -82,10 +82,9 @@ mkdir -p /etc/containerd
 containerd config default >/etc/containerd/config.toml
 sed -i "s/SystemdCgroup = false/SystemdCgroup = true/" /etc/containerd/config.toml
 
-# Force containerd (a Go program) to use the system libc resolver so it
-# respects /etc/gai.conf IPv4 preference set in base.sh.
-# Without this, Go uses its own resolver which ignores gai.conf and may
-# prefer IPv6, causing 403 Forbidden from registry.k8s.io on Hetzner.
+# Belt-and-suspenders: force containerd to use the system libc resolver.
+# IPv6 is already disabled at the kernel level by base.sh, but this ensures
+# containerd uses IPv4 even if IPv6 were re-enabled on the node.
 mkdir -p /etc/systemd/system/containerd.service.d
 cat > /etc/systemd/system/containerd.service.d/ipv4-dns.conf << 'EOF'
 [Service]

@@ -20,17 +20,19 @@ set -o pipefail
 
 echo '--> Starting Base Installation.'
 
-# Prefer IPv4 for all outbound connections.
-# registry.k8s.io and pkgs.k8s.io return 403 Forbidden when accessed from
-# Hetzner Cloud via IPv6. This setting is baked into the snapshot so that it
-# applies both during the Packer build and on actual cluster nodes at boot.
-# - /etc/gai.conf affects libc getaddrinfo() (used by apt, curl, etc.)
-# - /etc/apt/apt.conf.d/99force-ipv4 is an additional safeguard for apt
-# Go programs (containerd, kubeadm) are configured separately in cri.sh.
-cat > /etc/gai.conf << 'EOF'
-# Prefer IPv4-mapped addresses over native IPv6 (higher precedence = preferred)
-precedence ::ffff:0:0/96  100
+# Disable IPv6 — registry.k8s.io and pkgs.k8s.io return 403 Forbidden when
+# accessed from Hetzner Cloud via IPv6. Disabling at the kernel level forces
+# ALL programs (apt, curl, Go runtimes) to use IPv4, regardless of how they
+# resolve DNS. Baked into the snapshot so it applies during Packer build AND
+# on actual cluster nodes at boot (kubeadm init also pulls from registry.k8s.io).
+cat > /etc/sysctl.d/99-hetzner-ipv4.conf << 'EOF'
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
 EOF
+# Apply immediately — sysctl --system runs later in cri.sh but the apt/curl
+# commands below need IPv4 now.
+sysctl -w net.ipv6.conf.all.disable_ipv6=1
+sysctl -w net.ipv6.conf.default.disable_ipv6=1
 echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
 
 # Set locale
