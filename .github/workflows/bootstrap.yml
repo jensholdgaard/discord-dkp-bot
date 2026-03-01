@@ -178,6 +178,13 @@ jobs:
             crd/hetznerclusters.infrastructure.cluster.x-k8s.io \
             crd/hcloudmachinetemplates.infrastructure.cluster.x-k8s.io
 
+          echo "Waiting for CAPH webhook service to be ready..."
+          until kubectl -n caph-system get endpoints caph-webhook-service \
+              -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null | grep -q '.'; do
+            sleep 2
+          done
+          echo "✅ CAPH webhook service is ready."
+
       # ── Step 3: Create Hetzner secret ────────────────────────
       - name: "Step 3: Create Hetzner secret"
         run: |
