@@ -176,7 +176,7 @@ jobs:
             -n "${CLUSTER_NAME}" \
             -i hetzner \
             -b kind \
-            -v "v${KUBERNETES_VERSION}" \
+            -v "${KUBERNETES_VERSION}" \
             -c "${CONTROL_PLANE_NODE_COUNT}" \
             -w "${WORKER_NODE_COUNT}"
         env:
