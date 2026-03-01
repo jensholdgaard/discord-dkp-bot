@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
-# bootstrap.sh — Bootstrap a Kubernetes cluster on Hetzner Cloud via Cluster API
+# bootstrap.sh — Bootstrap a self-managed Kubernetes cluster on Hetzner Cloud
 #
-# This script:
-#   1. Creates a local Kind management cluster
-#   2. Installs the CAPI + Hetzner provider
-#   3. Applies the cluster manifests (control-plane, workers)
-#   4. Waits for the workload cluster to become ready
-#   5. Pivots CAPI management to the workload cluster
-#   6. Installs FluxCD for GitOps self-management
-#   7. Deletes the local Kind cluster
+# Uses capictl (https://github.com/nicholasdille/capictl) to:
+#   1. Create a local Kind management cluster
+#   2. Install CAPI + Hetzner provider (CAPH)
+#   3. Provision the workload cluster using a pre-baked Hetzner snapshot
+#   4. Install Cilium CNI + Hetzner CCM/CSI automatically via ClusterResourceSets
+#   5. Pivot CAPI management to the workload cluster (self-managed)
+#   6. Delete the local Kind cluster
+#
+# Then applies project-specific post-bootstrap steps:
+#   7. Bootstrap FluxCD for GitOps
+#   8. Create required secrets (Discord bot, CNPG S3 backups)
 #
 # Prerequisites:
-#   - kind, kubectl, clusterctl, hcloud, flux CLI installed
-#   - A copy of clusterctl-settings.env with your credentials
-#     (see clusterctl-settings.env for the template)
+#   - docker, kind, kubectl, clusterctl, hcloud, flux, helm, jq, yq installed
+#   - A pre-built Hetzner snapshot (run: cd packer && packer build ubuntu.pkr.hcl)
+#   - .env filled in (copy from clusterctl-settings.env and edit)
 #
 # Usage:
-#   cp clusterctl-settings.env .env   # fill in real values
-#   source .env
+#   cp clusterctl-settings.env .env
+#   # Edit .env with your values
 #   ./bootstrap.sh
 
 set -euo pipefail
@@ -25,251 +28,93 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# ─── Load settings (fall back to the template if .env is absent) ─
+# ─── Load settings ─────────────────────────────────────────────
 if [[ -f "${SCRIPT_DIR}/.env" ]]; then
   # shellcheck source=.env
   source "${SCRIPT_DIR}/.env"
 else
-  echo "⚠  No .env found — falling back to clusterctl-settings.env template."
-  echo "   Copy clusterctl-settings.env → .env and fill in real values."
-  # shellcheck source=clusterctl-settings.env
+  echo "⚠  No .env found — copy clusterctl-settings.env → .env and fill in real values."
   source "${SCRIPT_DIR}/clusterctl-settings.env"
 fi
 
-CLUSTER_NAME="${CLUSTER_NAME:-dkpbot-prod}"
-FLUX_BRANCH="${FLUX_BRANCH:-main}"
-KIND_CLUSTER="capi-management"
-
-# ─── Required env check ─────────────────────────────────────────
+# ─── Required variables ─────────────────────────────────────────
 : "${HCLOUD_TOKEN:?Set HCLOUD_TOKEN in .env}"
-# Fall back to gh CLI token if GITHUB_TOKEN is not explicitly set
 GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token 2>/dev/null)}"
 : "${GITHUB_TOKEN:?Could not obtain GITHUB_TOKEN — set it in .env or run: gh auth login}"
-: "${GITHUB_USER:?Set GITHUB_USER in .env (GitHub owner for Flux)}"
+: "${GITHUB_USER:?Set GITHUB_USER in .env}"
 
-# ─── Validate Hetzner API token ─────────────────────────────────
+export CLUSTER_NAME="${CLUSTER_NAME:-dkpbot-prod}"
+export FLUX_BRANCH="${FLUX_BRANCH:-main}"
+
+# capictl env vars (all have defaults in capictl; we set project-specific values)
+export HCLOUD_TOKEN
+export HCLOUD_REGION="${HCLOUD_REGION:-nbg1}"
+export HCLOUD_CONTROL_PLANE_MACHINE_TYPE="${HCLOUD_CONTROL_PLANE_MACHINE_TYPE:-cx23}"
+export HCLOUD_WORKER_MACHINE_TYPE="${HCLOUD_WORKER_MACHINE_TYPE:-cx23}"
+export CONTROL_PLANE_NODE_COUNT="${CONTROL_PLANE_MACHINE_COUNT:-1}"
+export WORKER_NODE_COUNT="${WORKER_MACHINE_COUNT:-1}"
+# IMAGE_NAME is auto-detected by capictl from Hetzner snapshots (label caph-image-name)
+# Override if you have multiple images and want a specific one:
+# export IMAGE_NAME="ubuntu-24.04-amd64-k8s-1.31.6"
+
+# ─── Validate Hetzner token ─────────────────────────────────────
 echo "==> Pre-flight: Validating HCLOUD_TOKEN..."
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
   -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
-  "https://api.hetzner.cloud/v1/locations?per_page=1") || {
-  echo "    ⚠  Could not reach Hetzner API (network error). Continuing anyway."
-  HTTP_CODE="000"
-}
+  "https://api.hetzner.cloud/v1/locations?per_page=1") || HTTP_CODE="000"
 if [[ "${HTTP_CODE}" == "401" || "${HTTP_CODE}" == "403" ]]; then
-  echo "ERROR: HCLOUD_TOKEN is invalid (HTTP ${HTTP_CODE}). Check your Hetzner Cloud API token."
+  echo "ERROR: HCLOUD_TOKEN is invalid (HTTP ${HTTP_CODE})."
   exit 1
 fi
-if [[ "${HTTP_CODE}" == "200" ]]; then
-  echo "    ✅ HCLOUD_TOKEN is valid."
-elif [[ "${HTTP_CODE}" != "000" ]]; then
-  echo "    ⚠  Unexpected response from Hetzner API (HTTP ${HTTP_CODE}). Continuing anyway."
-fi
+[[ "${HTTP_CODE}" == "200" ]] && echo "    ✅ HCLOUD_TOKEN is valid."
 
-echo "==> Step 1: Create local Kind management cluster"
-if kind get clusters 2>/dev/null | grep -q "^${KIND_CLUSTER}$"; then
-  echo "    Kind cluster '${KIND_CLUSTER}' already exists, reusing."
-else
-  kind create cluster --name "${KIND_CLUSTER}"
-fi
-kubectl config use-context "kind-${KIND_CLUSTER}"
-
-echo "==> Step 2: Install Cluster API with Hetzner provider"
-export EXP_CLUSTER_RESOURCE_SET="true"
-clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure hetzner
-
-echo "    Waiting for CAPI core controller..."
-kubectl wait --for=condition=Available --timeout=300s \
-  deployment/capi-controller-manager -n capi-system
-
-echo "    Waiting for KubeadmControlPlane controller..."
-kubectl wait --for=condition=Available --timeout=300s \
-  deployment/capi-kubeadm-control-plane-controller-manager -n capi-kubeadm-control-plane-system
-
-echo "    Waiting for KubeadmBootstrap controller..."
-kubectl wait --for=condition=Available --timeout=300s \
-  deployment/capi-kubeadm-bootstrap-controller-manager -n capi-kubeadm-bootstrap-system
-
-echo "    Waiting for CAPH controllers to be ready..."
-kubectl wait --for=condition=Available --timeout=300s \
-  deployment/caph-controller-manager -n caph-system
-
-echo "    Waiting for Hetzner CRDs to be established..."
-kubectl wait --for=condition=Established --timeout=60s \
-  crd/hetznerclusters.infrastructure.cluster.x-k8s.io \
-  crd/hcloudmachinetemplates.infrastructure.cluster.x-k8s.io
-
-echo "    Waiting for CAPH webhook service to be ready..."
-until kubectl -n caph-system get endpoints caph-webhook-service \
-    -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null | grep -q '.'; do
-  sleep 2
-done
-echo "    ✅ CAPH webhook service is ready."
-
-echo "==> Step 3: Create the Hetzner secret"
-kubectl create secret generic hetzner \
-  --from-literal=hcloud="${HCLOUD_TOKEN}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-# Label the secret so clusterctl move copies it to the workload cluster
-kubectl patch secret hetzner -p '{"metadata":{"labels":{"clusterctl.cluster.x-k8s.io/move":""}}}'
-
-echo "==> Step 3b: Ensure SSH key exists in Hetzner Cloud"
-SSH_KEY_NAME="${HCLOUD_SSH_KEY:-dkpbot-ssh}"
-echo "    Checking if SSH key '${SSH_KEY_NAME}' exists..."
-
-ENCODED_NAME=$(jq -rn --arg n "${SSH_KEY_NAME}" '$n|@uri')
-RESP=$(curl -sf -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
-  "https://api.hetzner.cloud/v1/ssh_keys?name=${ENCODED_NAME}" 2>&1) || {
-  echo "ERROR: Could not query Hetzner Cloud SSH keys API."
+# ─── Check Hetzner snapshot exists ──────────────────────────────
+echo "==> Pre-flight: Checking for pre-baked Hetzner snapshot..."
+IMAGE_COUNT=$(curl -sf -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
+  "https://api.hetzner.cloud/v1/images?type=snapshot&label_selector=caph-image-name" \
+  | jq '.images | length')
+if [[ "${IMAGE_COUNT}" -eq 0 ]]; then
+  echo "ERROR: No Hetzner snapshot with label 'caph-image-name' found."
+  echo "  Build the image first:"
+  echo "    cd ${SCRIPT_DIR}/packer"
+  echo "    packer init ."
+  echo "    packer build -var 'kubernetes_version=1.31.6' ubuntu.pkr.hcl"
   exit 1
-}
-
-KEY_COUNT=$(echo "${RESP}" | jq '.ssh_keys | length')
-
-if [[ "${KEY_COUNT}" -gt 0 ]]; then
-  echo "    ✅ SSH key '${SSH_KEY_NAME}' already exists in Hetzner Cloud."
-else
-  echo "    SSH key '${SSH_KEY_NAME}' not found. Creating..."
-
-  # Use the provided public key file, or generate a new key pair
-  if [[ -n "${HCLOUD_SSH_PUBKEY_FILE:-}" && -f "${HCLOUD_SSH_PUBKEY_FILE}" ]]; then
-    SSH_PUBKEY=$(cat "${HCLOUD_SSH_PUBKEY_FILE}")
-    echo "    Using public key from ${HCLOUD_SSH_PUBKEY_FILE}"
-  elif [[ -f "${HOME}/.ssh/id_ed25519.pub" ]]; then
-    SSH_PUBKEY=$(cat "${HOME}/.ssh/id_ed25519.pub")
-    echo "    Using existing public key from ~/.ssh/id_ed25519.pub"
-  elif [[ -f "${HOME}/.ssh/id_rsa.pub" ]]; then
-    SSH_PUBKEY=$(cat "${HOME}/.ssh/id_rsa.pub")
-    echo "    Using existing public key from ~/.ssh/id_rsa.pub"
-  else
-    echo "    No existing SSH key found — generating a new Ed25519 key pair."
-    TMPDIR=$(mktemp -d)
-    ssh-keygen -t ed25519 -f "${TMPDIR}/hcloud-ssh-key" -N "" -C "dkpbot-bootstrap" >/dev/null 2>&1
-    chmod 600 "${TMPDIR}/hcloud-ssh-key"
-    SSH_PUBKEY=$(cat "${TMPDIR}/hcloud-ssh-key.pub")
-    echo "    ⚠  Generated key pair saved to ${TMPDIR}/hcloud-ssh-key (private) and ${TMPDIR}/hcloud-ssh-key.pub (public)."
-    echo "    Save the private key if you need SSH access to your nodes."
-  fi
-
-  HTTP_CODE=$(curl -s -o /tmp/ssh-create-resp.json -w "%{http_code}" \
-    -X POST \
-    -H "Authorization: Bearer ${HCLOUD_TOKEN}" \
-    -H "Content-Type: application/json" \
-    --data "$(jq -n --arg name "${SSH_KEY_NAME}" --arg key "${SSH_PUBKEY}" \
-      '{name: $name, public_key: $key}')" \
-    "https://api.hetzner.cloud/v1/ssh_keys")
-
-  if [[ "${HTTP_CODE}" =~ ^2 ]]; then
-    echo "    ✅ SSH key '${SSH_KEY_NAME}' created in Hetzner Cloud."
-  else
-    echo "ERROR: Failed to create SSH key (HTTP ${HTTP_CODE})."
-    cat /tmp/ssh-create-resp.json
-    rm -f /tmp/ssh-create-resp.json
-    exit 1
-  fi
-  rm -f /tmp/ssh-create-resp.json
 fi
+echo "    ✅ Found ${IMAGE_COUNT} snapshot(s) with 'caph-image-name' label."
 
-echo "==> Step 4: Apply cluster manifests"
-# Template replica counts, machine types, and SSH key name from environment variables
-sed -e "s/replicas: 3/replicas: ${CONTROL_PLANE_MACHINE_COUNT:-1}/" \
-    -e "s/type: cx23/type: ${HCLOUD_CONTROL_PLANE_MACHINE_TYPE:-cx23}/" \
-  "${SCRIPT_DIR}/control-plane.yaml" > /tmp/control-plane.yaml
-sed -e "s/replicas: 2/replicas: ${WORKER_MACHINE_COUNT:-1}/" \
-    -e "s/type: cx23/type: ${HCLOUD_WORKER_MACHINE_TYPE:-cx23}/" \
-  "${SCRIPT_DIR}/workers.yaml" > /tmp/workers.yaml
-sed "s/name: dkpbot-ssh/name: ${SSH_KEY_NAME}/" \
-  "${SCRIPT_DIR}/cluster.yaml" > /tmp/cluster.yaml
+# ─── Clone capictl ──────────────────────────────────────────────
+CAPICTL_DIR="${TMPDIR:-/tmp}/capictl-$$"
+echo "==> Cloning capictl to ${CAPICTL_DIR}..."
+git clone --depth=1 https://github.com/nicholasdille/capictl.git "${CAPICTL_DIR}"
+trap 'rm -rf "${CAPICTL_DIR}"' EXIT
 
-kubectl apply -f /tmp/cluster.yaml
-kubectl apply -f /tmp/control-plane.yaml
-kubectl apply -f /tmp/workers.yaml
+# ─── Run capictl ────────────────────────────────────────────────
+echo "==> Running capictl (this takes 10-20 minutes)..."
+cd "${CAPICTL_DIR}"
+bash capictl \
+  -n "${CLUSTER_NAME}" \
+  -i hetzner \
+  -b kind \
+  -v "v${KUBERNETES_VERSION:-1.31.6}" \
+  -c "${CONTROL_PLANE_NODE_COUNT}" \
+  -w "${WORKER_NODE_COUNT}"
 
-echo "==> Step 5: Wait for control plane to initialize"
-echo "    This may take 10-20 minutes (plain Ubuntu images need time to install K8s components)..."
-echo "    Waiting for kubeadm init to complete (KCP initialized=true)..."
-SECONDS=0
-TIMEOUT=1200
-while (( SECONDS < TIMEOUT )); do
-  INITIALIZED=$(kubectl get kubeadmcontrolplane \
-    -l "cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}" \
-    -o jsonpath='{.items[0].status.initialized}' 2>/dev/null || true)
-  if [[ "${INITIALIZED}" == "true" ]]; then
-    echo "    ✅ Control plane initialized after ${SECONDS}s"
-    break
-  fi
-  sleep 15
-  SECONDS=$(( SECONDS + 15 ))
-done
-if [[ "${INITIALIZED}" != "true" ]]; then
-  echo "ERROR: Timed out waiting for control plane to initialize. Check:"
-  echo "  kubectl describe kubeadmcontrolplane -l cluster.x-k8s.io/cluster-name=${CLUSTER_NAME}"
+KUBECONFIG_FILE="${CAPICTL_DIR}/kubeconfig-${CLUSTER_NAME}"
+if [[ ! -f "${KUBECONFIG_FILE}" ]]; then
+  echo "ERROR: capictl did not produce ${KUBECONFIG_FILE}"
   exit 1
 fi
 
-echo "==> Step 6: Get workload cluster kubeconfig"
-clusterctl get kubeconfig "${CLUSTER_NAME}" > "${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
-echo "    Kubeconfig saved to ${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
-
-echo "==> Step 7: Install Hetzner Cloud Controller Manager on workload cluster"
+# Copy kubeconfig to a stable path
+cp "${KUBECONFIG_FILE}" "${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
 export KUBECONFIG="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
+cd "${SCRIPT_DIR}"
 
-kubectl create secret generic hetzner \
-  --from-literal=token="${HCLOUD_TOKEN}" \
-  --from-literal=network="${CLUSTER_NAME}" \
-  -n kube-system --dry-run=client -o yaml | kubectl apply -f -
+echo "    ✅ Cluster '${CLUSTER_NAME}' is ready. Kubeconfig: ${CLUSTER_NAME}.kubeconfig"
 
-helm repo add hcloud https://charts.hetzner.cloud
-helm repo update
-helm install hccm hcloud/hcloud-cloud-controller-manager \
-  -n kube-system \
-  --set env.HCLOUD_TOKEN.valueFrom.secretKeyRef.name=hetzner \
-  --set env.HCLOUD_TOKEN.valueFrom.secretKeyRef.key=token
-
-echo "==> Step 8: Install Cilium CNI"
-helm repo add cilium https://helm.cilium.io/
-helm install cilium cilium/cilium \
-  -n kube-system \
-  --set ipam.mode=kubernetes
-
-echo "    Waiting for nodes to become Ready..."
-kubectl wait --for=condition=Ready nodes --all --timeout=300s
-
-echo "==> Step 9: Pivot CAPI management to the workload cluster"
-# Switch back to management cluster (KUBECONFIG was pointing at workload)
-unset KUBECONFIG
-
-# Initialize CAPI + CAPH on the workload cluster so it can manage its own
-# objects after the pivot. Per CAPH docs this must happen before clusterctl move.
-echo "    Initializing CAPI providers on workload cluster..."
-export EXP_CLUSTER_RESOURCE_SET="true"
-clusterctl init \
-  --kubeconfig="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig" \
-  --core cluster-api \
-  --bootstrap kubeadm \
-  --control-plane kubeadm \
-  --infrastructure hetzner
-
-echo "    Waiting for CAPH controller on workload cluster..."
-kubectl --kubeconfig="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig" \
-  wait --for=condition=Available --timeout=300s \
-  deployment/caph-controller-manager -n caph-system
-
-echo "    Waiting for CAPH webhook endpoint on workload cluster..."
-until kubectl --kubeconfig="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig" \
-    -n caph-system get endpoints caph-webhook-service \
-    -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null | grep -q '.'; do
-  sleep 2
-done
-echo "    ✅ CAPH webhook ready on workload cluster."
-
-echo "    Pivoting CAPI objects to workload cluster..."
-clusterctl move \
-  --to-kubeconfig="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
-
-echo "==> Step 10: Bootstrap FluxCD on the workload cluster (branch: ${FLUX_BRANCH})"
-export KUBECONFIG="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
-
+# ─── Step: Bootstrap FluxCD ─────────────────────────────────────
+echo "==> Bootstrapping FluxCD (branch: ${FLUX_BRANCH})..."
 flux bootstrap github \
   --owner="${GITHUB_USER}" \
   --repository=discord-dkp-bot \
@@ -278,65 +123,44 @@ flux bootstrap github \
   --personal \
   --token-auth
 
-echo "    Applying Helm values ConfigMaps for Flux HelmReleases..."
+echo "    Applying Flux resources..."
 kubectl apply -f "${DEPLOY_DIR}/flux/kustomizations/helm-values-configmaps.yaml"
-
-echo "    Applying Flux Kustomizations..."
 kubectl apply -f "${DEPLOY_DIR}/flux/kustomizations/"
 
-echo "    Creating DKP bot secrets placeholder (edit with real values)..."
+# ─── Step: DKP bot secrets ──────────────────────────────────────
+echo "==> Creating dkpbot-secrets placeholder..."
 kubectl -n flux-system create secret generic dkpbot-secrets \
-  --from-literal=config.discord.token="REPLACE_ME" \
-  --from-literal=config.discord.guild_id="REPLACE_ME" \
+  --from-literal=config.discord.token="${DISCORD_TOKEN:-REPLACE_ME}" \
+  --from-literal=config.discord.guild_id="${DISCORD_GUILD_ID:-REPLACE_ME}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-echo "    Creating CNPG S3 backup credentials..."
+# ─── Step: CNPG S3 backup credentials ───────────────────────────
+echo "==> Creating CNPG namespace and backup credentials..."
 kubectl create namespace dkpbot --dry-run=client -o yaml | kubectl apply -f -
 if [[ -n "${CNPG_S3_ACCESS_KEY:-}" && -n "${CNPG_S3_SECRET_KEY:-}" ]]; then
   kubectl -n dkpbot create secret generic backup-s3-credentials \
     --from-literal=ACCESS_KEY_ID="${CNPG_S3_ACCESS_KEY}" \
     --from-literal=ACCESS_SECRET_KEY="${CNPG_S3_SECRET_KEY}" \
     --dry-run=client -o yaml | kubectl apply -f -
-  echo "    ✅ backup-s3-credentials Secret created."
+  echo "    ✅ backup-s3-credentials created."
 else
-  echo "    ⚠  CNPG_S3_ACCESS_KEY / CNPG_S3_SECRET_KEY not set in .env."
-  echo "    CNPG backups will not work until you create the Secret manually:"
+  echo "    ⚠  CNPG_S3_ACCESS_KEY / CNPG_S3_SECRET_KEY not set — create the Secret manually:"
   echo "      kubectl -n dkpbot create secret generic backup-s3-credentials \\"
-  echo "        --from-literal=ACCESS_KEY_ID=<your-key> \\"
-  echo "        --from-literal=ACCESS_SECRET_KEY=<your-secret>"
+  echo "        --from-literal=ACCESS_KEY_ID=<key> \\"
+  echo "        --from-literal=ACCESS_SECRET_KEY=<secret>"
 fi
 
-echo "==> Step 11: Clean up local Kind cluster"
-unset KUBECONFIG
-kind delete cluster --name "${KIND_CLUSTER}"
-
+# ─── Summary ────────────────────────────────────────────────────
 echo ""
-echo "✅ Cluster '${CLUSTER_NAME}' is ready and self-managed via FluxCD!"
-echo "   FluxCD is tracking branch: ${FLUX_BRANCH}"
+echo "✅ Cluster '${CLUSTER_NAME}' is bootstrapped and self-managed via FluxCD!"
+echo "   FluxCD tracking branch: ${FLUX_BRANCH}"
 echo ""
-echo "Use the workload cluster:"
+echo "Use the cluster:"
 echo "  export KUBECONFIG=${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
 echo "  kubectl get nodes"
 echo ""
-echo "FluxCD will now reconcile all services from Git:"
-echo "  flux get kustomizations"
-echo "  flux get helmreleases -A"
-if [[ "${FLUX_BRANCH}" != "main" ]]; then
+if [[ "${DISCORD_TOKEN:-REPLACE_ME}" == "REPLACE_ME" ]]; then
+  echo "⚠  Update dkpbot-secrets with real Discord credentials:"
+  echo "  kubectl -n flux-system edit secret dkpbot-secrets"
   echo ""
-  echo "⚠  Flux is tracking branch '${FLUX_BRANCH}', not 'main'."
-  echo "   After testing, re-run with FLUX_BRANCH=main or update the"
-  echo "   Flux GitRepository to point to 'main'."
-fi
-echo ""
-echo "⚠  Update the dkpbot-secrets Secret with real Discord credentials:"
-echo "  kubectl -n flux-system edit secret dkpbot-secrets"
-echo ""
-if [[ -z "${CNPG_S3_ACCESS_KEY:-}" || -z "${CNPG_S3_SECRET_KEY:-}" ]]; then
-  echo "⚠  Create backup-s3-credentials in the dkpbot namespace with real"
-  echo "  Hetzner Object Storage credentials for CNPG backups:"
-  echo "    kubectl -n dkpbot create secret generic backup-s3-credentials \\"
-  echo "      --from-literal=ACCESS_KEY_ID=<your-key> \\"
-  echo "      --from-literal=ACCESS_SECRET_KEY=<your-secret>"
-else
-  echo "✅ CNPG S3 backup credentials configured."
 fi
