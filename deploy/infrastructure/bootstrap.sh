@@ -235,14 +235,17 @@ helm install cilium cilium/cilium \
 echo "    Waiting for nodes to become Ready..."
 kubectl wait --for=condition=Ready nodes --all --timeout=300s
 
-# Now that CNI is up, nodes are Ready, so the cluster can reach Ready.
-# clusterctl move requires cluster.Ready=True before pivoting.
-echo "    Waiting for cluster to be fully Ready..."
-unset KUBECONFIG
-kubectl wait --for=condition=Ready \
-  "cluster/${CLUSTER_NAME}" --timeout=120s
-
 echo "==> Step 9: Pivot CAPI management to the workload cluster"
+# Switch back to management cluster (KUBECONFIG was pointing at workload)
+unset KUBECONFIG
+
+# Wait for cluster.Ready=True before pivoting. All control plane nodes must be
+# Ready (Cilium DaemonSet propagates as they join). For multi-node clusters
+# this can take several minutes beyond the node wait above.
+echo "    Waiting for cluster to be fully Ready (up to 15 min)..."
+kubectl wait --for=condition=Ready \
+  "cluster/${CLUSTER_NAME}" --timeout=900s
+
 clusterctl move \
   --to-kubeconfig="${SCRIPT_DIR}/${CLUSTER_NAME}.kubeconfig"
 

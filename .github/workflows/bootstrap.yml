@@ -472,20 +472,18 @@ jobs:
           echo "Waiting for nodes to become Ready..."
           kubectl wait --for=condition=Ready nodes --all --timeout=300s
 
-          # Now that CNI is up, nodes are Ready, so the cluster can reach Ready.
-          # clusterctl move requires cluster.Ready=True before pivoting.
-          echo "Waiting for cluster to be fully Ready..."
-          kubectl config use-context kind-capi-management
-          kubectl wait --for=condition=Ready \
-            "cluster/${CLUSTER_NAME}" --timeout=120s
-          echo "KUBECONFIG=/tmp/workload.kubeconfig" >> "$GITHUB_ENV"
-
       # ── Step 9: Pivot CAPI ─────────────────────────────────
       - name: "Step 9: Pivot CAPI management to workload cluster"
         run: |
-          # Switch back to management cluster for the move
+          # Switch back to management cluster (KUBECONFIG was pointing at workload)
           export KUBECONFIG=""
-          kubectl config use-context kind-capi-management
+
+          # Wait for cluster.Ready=True before pivoting. All control plane nodes
+          # must be Ready (Cilium DaemonSet propagates as they join). For multi-node
+          # clusters this can take several minutes beyond Step 8's node wait.
+          echo "Waiting for cluster to be fully Ready (up to 15 min)..."
+          kubectl wait --for=condition=Ready \
+            "cluster/${CLUSTER_NAME}" --timeout=900s
 
           clusterctl move \
             --to-kubeconfig=/tmp/workload.kubeconfig
