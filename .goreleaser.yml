@@ -31,8 +31,6 @@ dockers_v2:
       - latest
     dockerfile: Dockerfile
     sbom: false
-    build_flag_templates:
-      - "--build-arg=BINARY={{ .Os }}/{{ .Arch }}/dkpbot"
     labels:
       org.opencontainers.image.created: "{{.Date}}"
       org.opencontainers.image.title: "{{.ProjectName}}"
