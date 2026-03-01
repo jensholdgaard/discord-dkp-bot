@@ -22,9 +22,9 @@ on:
         required: false
         default: "1"
       machine_type:
-        description: "Hetzner machine type (cx21, cx31, etc.)"
+        description: "Hetzner machine type (cx23, cx33, cx43, etc.)"
         required: false
-        default: "cx21"
+        default: "cx23"
       kubernetes_version:
         description: "Kubernetes version"
         required: false
@@ -268,11 +268,13 @@ jobs:
       # ── Step 4: Apply cluster manifests ──────────────────────
       - name: "Step 4: Apply cluster manifests"
         run: |
-          # Template replica counts and SSH key name from workflow inputs into manifests
-          sed "s/replicas: 3/replicas: ${CONTROL_PLANE_MACHINE_COUNT}/" \
+          # Template replica counts, machine types, and SSH key name from workflow inputs into manifests
+          sed -e "s/replicas: 3/replicas: ${CONTROL_PLANE_MACHINE_COUNT}/" \
+              -e "s/type: cx23/type: ${HCLOUD_CONTROL_PLANE_MACHINE_TYPE}/" \
             deploy/infrastructure/control-plane.yaml > /tmp/control-plane.yaml
 
-          sed "s/replicas: 2/replicas: ${WORKER_MACHINE_COUNT}/" \
+          sed -e "s/replicas: 2/replicas: ${WORKER_MACHINE_COUNT}/" \
+              -e "s/type: cx23/type: ${HCLOUD_WORKER_MACHINE_TYPE}/" \
             deploy/infrastructure/workers.yaml > /tmp/workers.yaml
 
           sed "s/name: dkpbot-ssh/name: ${HCLOUD_SSH_KEY}/" \
